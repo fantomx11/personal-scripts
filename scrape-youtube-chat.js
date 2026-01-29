@@ -169,9 +169,13 @@
   }
 
   function listLogs() {
-    const logIds = Object.keys(chatDB);
-    
-    return logIds.map(logId => ({logId, title: chatDB[logId].title, channel: chatDB[logId].channel}));
+    const currentDB = JSON.parse(localStorage.getItem(DB_KEY) || '{}');
+    return Object.keys(currentDB).map(id => ({
+      id,
+      channel: currentDB[id].channel,
+      title: currentDB[id].title,
+      messages: currentDB[id].messages.length
+    }));
   }
 
   init();

@@ -168,13 +168,20 @@
     console.log(liveChatLog.slice(-20).map(m => `[${m.timestamp}] ${m.user}: ${m.message}`).join('\n'));  
   }
 
+  function listLogs() {
+    const logIds = Object.keys(chatDB);
+    
+    return logIds.map(logId => ({logId, title: chatDB[logId].title, channel: chatDB[logId].channel}));
+  }
+
   init();
 
   window.youTubeChatScraper = {
-      scrapeExisting,
-      clearVault,
-      downloadLog,
-      previewLog,
-      init
+    scrapeExisting,
+    clearVault,
+    downloadLog,
+    previewLog,
+    init,
+    listLogs
   };
 })();

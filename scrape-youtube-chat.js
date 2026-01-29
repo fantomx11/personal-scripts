@@ -1,5 +1,8 @@
-const youTubeChatScraper = (function() {
-  if(youTubeChatScraper !== void 0) return youTubeChatScraper;
+(function() {
+  if (window.youTubeChatScraper && window.youTubeChatScraper.observer) {
+    window.youTubeChatScraper.observer.disconnect();
+    console.log("Existing observer disconnected to prevent duplicates.");
+  }
   
   const DB_KEY = 'yt_chat_database';
   const urlParams = new URLSearchParams(window.parent.location.search);
@@ -104,13 +107,17 @@ const youTubeChatScraper = (function() {
     }
   };
 
-  const chatContainer = document.querySelector('#items.yt-live-chat-item-list-renderer');
-
+  let chatContainer 
+  
   function init() {
+    observer.disconnect();
+    
+    chatContainer = document.querySelector('#items.yt-live-chat-item-list-renderer');
     if (chatContainer) {
       scrapeExisting(); // Get the backlog first
       observer.observe(chatContainer, { childList: true });
       console.log("Observer active. Capturing live updates...");
+      console.log(`Total in this stream: ${liveChatLog.length}`);
     } else {
       console.error("Wrong context! Switch the console to 'chatframe'.");
     }
@@ -163,13 +170,11 @@ const youTubeChatScraper = (function() {
 
   init();
 
-  return {
+  window.youTubeChatScraper = {
       scrapeExisting,
       clearVault,
       downloadLog,
       previewLog,
       init
-  }
-  
+  };
 })();
-

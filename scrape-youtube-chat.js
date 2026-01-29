@@ -1,13 +1,21 @@
-const youTubeChatScraper = (function() {
+const youTubeChatScraper = (function(youTubeChatScraper) {
   if(youTubeChatScraper !== void 0) return youTubeChatScraper;
   
   const DB_KEY = 'yt_chat_database';
   const urlParams = new URLSearchParams(window.parent.location.search);
   const STREAM_ID = urlParams.get('v') || 'unknown_stream';
 
+  const STREAM_TITLE = window.parent.document.title.replace(/ - YouTube$/, '').trim();
+  const CHANNEL_NAME = window.parent.document.querySelector("#owner #channel-name").innerText;
+
   const chatDB = JSON.parse(localStorage.getItem(DB_KEY) || '{}');
 
-  let liveChatLog = chatDB[STREAM_ID] || [];
+  let streamData = chatDB[STREAM_ID] || { title: STREAM_TITLE, channel: CHANNEL_NAME, messages: [] };
+  if (Array.isArray(streamData)) {
+    streamData = { title: STREAM_TITLE, channel: CHANNEL_NAME, messages: streamData };
+  }
+  
+  let liveChatLog = streamData.messages;
   const seenKeys = new Set(liveChatLog.map(m => `${m.timestamp}|${m.user}|${m.message}`));
 
   function getSortableTime(ts) {
@@ -78,19 +86,23 @@ const youTubeChatScraper = (function() {
   });
 
   function persistToStorage() {
-  // Sort the current log
-  liveChatLog.sort((a, b) => getSortableTime(a.timestamp) - getSortableTime(b.timestamp));
+    // Sort the current log
+    liveChatLog.sort((a, b) => getSortableTime(a.timestamp) - getSortableTime(b.timestamp));
   
-  // Update the local database object
-  chatDB[STREAM_ID] = liveChatLog;
+    // Update the local database object
+    chatDB[STREAM_ID] = {
+      title: STREAM_TITLE,
+      channel: CHANNEL_NAME,
+      messages: liveChatLog
+    };
   
-  try {
-    localStorage.setItem(DB_KEY, JSON.stringify(chatDB));
-    console.log(`Database updated for ${STREAM_ID}. Total in this stream: ${liveChatLog.length}`);
-  } catch (e) {
-    console.error("Storage full! Database exceeds 5MB.", e);
-  }
-};
+    try {
+      localStorage.setItem(DB_KEY, JSON.stringify(chatDB));
+      console.log(`Database updated for ${STREAM_ID}. Total in this stream: ${liveChatLog.length}`);
+    } catch (e) {
+      console.error("Storage full! Database exceeds 5MB.", e);
+    }
+  };
 
   const chatContainer = document.querySelector('#items.yt-live-chat-item-list-renderer');
 
@@ -105,19 +117,23 @@ const youTubeChatScraper = (function() {
   }
 
   function downloadLog(streamId = STREAM_ID) {
-    const currentDB = JSON.parse(localStorage.getItem(DB_KEY) || '{}');
-    // Use memory if it's the current stream, otherwise use the DB
-    const data = (streamId === STREAM_ID) ? liveChatLog : currentDB[streamId];
-    
-    if (!data) return console.error("No data for:", streamId);
+    const db = JSON.parse(localStorage.getItem(DB_KEY) || '{}');
+    const entry = db[streamId];
+    if (!entry) return console.error("No data for:", streamId);
 
-    const text = data.map(m => `[${m.timestamp}] ${m.user}: ${m.message}`).join('\n');
+    const title = entry.channel + " - " + entry.title || "Unknown Stream";
+    const messages = entry.messages || [];
+    
+    const text = messages.map(m => `[${m.timestamp}] ${m.user}: ${m.message}`).join('\n');
+                 
     const blob = new Blob([text], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `chat_${streamId}.txt`;
+    // Use the title in the filename (cleaned of illegal characters)
+    const safeTitle = title.replace(/[^\w\s]/gi, '').substring(0, 50);
+    a.download = `chat_${safeTitle || streamId}.txt`;
     a.click();
-  };
+  }
 
   function clearVault(streamId) {
     if(streamId == undefined) {
@@ -156,3 +172,4 @@ const youTubeChatScraper = (function() {
   }
   
 })();
+

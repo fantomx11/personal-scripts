@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Retro FPS Prototype</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        #instructions {
+            position: absolute; top: 10px; left: 10px; color: white;
+            font-family: sans-serif; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="instructions">WASD to Move | Mouse to Look (Click screen)</div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+
+    import * as THREE from 'three';
+
+    // 1. RETRO RENDERER SETUP
+    const gameWidth = 320;
+    const gameHeight = 240;
+    
+    const scene = new THREE.Scene();
+    // Wolfenstein used a very wide FOV
+    const camera = new THREE.PerspectiveCamera(75, gameWidth / gameHeight, 0.1, 100);
+    
+    // 1. HUD Scene & Orthographic Camera (Perfect for 2D)
+//    const hudScene = new THREE.Scene();
+//    const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+//    hudCamera.position.z = 1;
+
+    // 2. The Gun Sprite
+    const gunTexture = new THREE.TextureLoader().load('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAIElEQVQYV2P8z8D/HwyAsJmBEZ8ChBaG0uByYAn0m4gXAD98D/G90X9eAAAAAElFTkSuQmCC'); 
+    gunTexture.magFilter = THREE.NearestFilter;
+
+//    const gunMat = new THREE.SpriteMaterial({ map: gunTexture });
+//    const gunSprite = new THREE.Sprite(gunMat);
+//
+//    // Scale it and pin it to the bottom-center
+//    gunSprite.scale.set(0.5, 0.5, 1);
+//    gunSprite.position.set(0, -0.7, 0); // Bottom of screen
+//    hudScene.add(gunSprite);
+//    
+    // 1. HUD Camera with very wide clipping planes (Near: -10, Far: 10)
+    const hudCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
+    const hudScene = new THREE.Scene();
+
+    // 2. Create the Material
+    // If your data URL is broken, this Color will at least show a red square
+    const gunMat = new THREE.SpriteMaterial({ 
+        map: gunTexture, 
+        color: 0xffffff, // Tint white (shows texture as-is)
+        depthTest: false, 
+        depthWrite: false 
+    });
+
+    const gunSprite = new THREE.Sprite(gunMat);
+
+    // 3. Position: (0, 0, 0) is dead center. 
+    // Let's put it at (0, 0, 0) first to make sure you see it.
+    gunSprite.scale.set(0.5, 0.5, 1);
+    gunSprite.position.set(0, 0, 0); 
+
+    hudScene.add(gunSprite);
+    
+    const renderer = new THREE.WebGLRenderer({ antialias: false });
+    renderer.setSize(gameWidth, gameHeight, false); // False means "don't set CSS size"
+    
+    // Style the canvas for that "chunky" upscale
+    renderer.domElement.style.width = '100vw';
+    renderer.domElement.style.height = '100vh';
+    renderer.domElement.style.imageRendering = 'pixelated'; 
+    renderer.domElement.style.imageRendering = 'crisp-edges';
+    document.body.appendChild(renderer.domElement);
+
+    // 2. TEXTURE-LESS RETRO LOOK
+    // We use a dark fog to hide the edges of the map
+    scene.fog = new THREE.Fog(0x000000, 1, 8);
+
+    const map = [
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 1, 0, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 0, 1, 0, 0, 1],
+        [1, 0, 1, 1, 1, 0, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+    ];
+
+    const wallGeo = new THREE.BoxGeometry(1, 1, 1);
+    const wallMat = new THREE.MeshLambertMaterial({ color: 0x770000 });
+    
+    map.forEach((row, z) => {
+        row.forEach((cell, x) => {
+            if (cell === 1) {
+                const wall = new THREE.Mesh(wallGeo, wallMat);
+                wall.position.set(x, 0.5, z);
+                scene.add(wall);
+            }
+        });
+    });
+
+    // Floor and Ceiling (Standard in Wolfenstein)
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshLambertMaterial({ color: 0x333333 }));
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
+
+    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshLambertMaterial({ color: 0x111111 }));
+    ceil.rotation.x = Math.PI / 2;
+    ceil.position.y = 1;
+    scene.add(ceil);
+
+    const light = new THREE.PointLight(0xffffff, 40, 7);
+    scene.add(light, new THREE.AmbientLight(0x222222));
+
+    // 3. MOVEMENT ENGINE
+    const keys = {};
+    const player = { pos: new THREE.Vector3(1.5, 0.5, 1.5), rot: 0, speed: 0.06 };
+    
+    window.addEventListener('keydown', (e) => keys[e.code] = true);
+    window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+    function checkCollision(x, z) {
+        return map[Math.round(z)]?.[Math.round(x)] === 1;
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        
+        if (keys['KeyA']) player.rot += 0.05;
+        if (keys['KeyD']) player.rot -= 0.05;
+
+        let dx = 0, dz = 0;
+        if (keys['KeyW']) { dx = -Math.sin(player.rot) * player.speed; dz = -Math.cos(player.rot) * player.speed; }
+        if (keys['KeyS']) { dx = Math.sin(player.rot) * player.speed; dz = Math.cos(player.rot) * player.speed; }
+
+        // Collision with 0.2 radius buffer
+        if (!checkCollision(player.pos.x + dx + (dx > 0 ? 0.2 : -0.2), player.pos.z)) player.pos.x += dx;
+        if (!checkCollision(player.pos.x, player.pos.z + dz + (dz > 0 ? 0.2 : -0.2))) player.pos.z += dz;
+
+        camera.position.set(player.pos.x, 0.5, player.pos.z);
+        camera.rotation.y = player.rot;
+        
+        // Light stays with the player (like a lantern)
+        light.position.copy(camera.position);
+        
+        // Render Pass 1: The 3D World
+        renderer.autoClear = true; // Clear the previous frame
+        renderer.render(scene, camera);
+
+        // Render Pass 2: The 2D HUD
+        renderer.autoClear = false; // DON'T clear the 3D world we just drew
+        renderer.clearDepth();      // Just clear the depth buffer so the gun is "on top"
+        renderer.render(hudScene, hudCamera);
+    }
+    animate();
+
+
+    </script>
+</body>
+</html>

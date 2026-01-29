@@ -1,4 +1,4 @@
-const youTubeChatScraper = (function(youTubeChatScraper) {
+const youTubeChatScraper = (function() {
   if(youTubeChatScraper !== void 0) return youTubeChatScraper;
   
   const DB_KEY = 'yt_chat_database';

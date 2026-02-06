@@ -1,6 +1,6 @@
 (function() {
-  if (window.youTubeChatScraper && window.youTubeChatScraper.observer) {
-    window.youTubeChatScraper.observer.disconnect();
+  if (window.ytChatScraper && window.ytChatScraper.observer) {
+    window.ytChatScraper.observer.disconnect();
     console.log("Existing observer disconnected to prevent duplicates.");
   }
   
@@ -180,7 +180,7 @@
 
   init();
 
-  window.youTubeChatScraper = {
+  window.ytChatScraper = {
     scrapeExisting,
     clearVault,
     downloadLog,

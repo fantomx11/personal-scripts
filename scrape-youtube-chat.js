@@ -10,12 +10,13 @@
 
   const STREAM_TITLE = window.parent.document.title.replace(/ - YouTube$/, '').trim();
   const CHANNEL_NAME = window.parent.document.querySelector("#owner #channel-name").innerText;
+  const SCRAPE_DATE = new Date();
 
   const chatDB = JSON.parse(localStorage.getItem(DB_KEY) || '{}');
 
   let streamData = chatDB[STREAM_ID] || { title: STREAM_TITLE, channel: CHANNEL_NAME, messages: [] };
   if (Array.isArray(streamData)) {
-    streamData = { title: STREAM_TITLE, channel: CHANNEL_NAME, messages: streamData };
+    streamData = { title: STREAM_TITLE, channel: CHANNEL_NAME, messages: streamData, scrapeDate: SCRAPE_DATE };
   }
   
   let liveChatLog = streamData.messages;

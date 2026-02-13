@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MATH QUEST: TACTICAL MEMORY</title>
+    <style>
+        body { background: #000; color: #fff; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
+        #game-board { line-height: 1.0; font-size: 16px; white-space: pre; letter-spacing: 1px; font-weight: bold; border: 4px solid #0000AA; padding: 10px; background: #000; }
+        #combat-window { width: 600px; height: 180px; border: 4px solid #fff; margin-top: 10px; background: #000; padding: 15px; display: none; flex-direction: column; }
+        #log-text { flex-grow: 1; font-size: 14px; overflow-y: hidden; color: #aaa; text-transform: uppercase; line-height: 1.4; }
+        #input-zone { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #333; padding-top: 10px; }
+        #math-q { font-size: 24px; color: #ffff55; }
+        input { background: #000; border: 1px solid #fff; color: #fff; font-size: 20px; width: 80px; text-align: center; outline: none; }
+        .wall { color: #0000AA; } .door { color: #AAAAAA; } .monster { color: #FF5555; } .player { color: #FFFFFF; } .gem { color: #FFFF55; }
+        .stats { width: 620px; display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; color: #00ff00; }
+    </style>
+</head>
+<body>
+
+    <div class="stats">
+        <span>PLAYER HP: <span id="p-hp">2</span>/2</span>
+        <span style="color:#FFFF55">GEMS: <span id="gem-count">0</span></span>
+    </div>
+    
+    <div id="game-board"></div>
+    
+    <div id="combat-window">
+        <div id="log-text"></div>
+        <div id="input-zone">
+            <div id="math-q"></div>
+            <input type="number" id="math-input" autocomplete="off">
+        </div>
+    </div>
+
+<script>
+
+/** * --- CLASSES ---
+ */
+class MapEntity {
+    constructor(x, y, symbol, colorClass) {
+        this._x = x;
+        this._y = y;
+        this._symbol = symbol;
+        this._colorClass = colorClass;
+        this._isActive = true; 
+    }
+    get x() { return this._x; }
+    get y() { return this._y; }
+    get symbol() { return this._symbol; }
+    get colorClass() { return this._colorClass; }
+
+    moveTo(x, y) {
+        this._x = x;
+        this._y = y;
+    }
+
+    // Returns a result object indicating if it should remain in game
+    async takeTurn() {
+        return this._isActive;
+    }
+}
+
+class Gem extends MapEntity {
+    constructor(x, y) {
+        super(x, y, '*', 'gem');
+    }
+
+    pickup() {
+        this._isActive = false;
+    }
+}
+
+class CombatEntity extends MapEntity {
+    constructor(x, y, symbol, colorClass, maxHp) {
+        super(x, y, symbol, colorClass);
+        this._hp = maxHp;
+        this._maxHp = maxHp;
+    }
+    get hp() { return this._hp; }
+    get isDead() { return this._hp <= 0; }
+
+    takeDamage(amount) {
+        this._hp = Math.max(0, this._hp - amount);
+    }
+
+    resetVitality() {
+        this._hp = this._maxHp;
+    }
+
+    async takeTurn() {
+        return !this.isDead; // Prune if HP hits 0
+    }
+}
+
+class Player extends CombatEntity {
+    constructor(x, y) {
+        super(x, y, '@', 'player', 2);
+        this._gems = 0;
+        this._startX = x;
+        this._startY = y;
+    }
+
+    get gems() { return this._gems; }
+
+    // Semantic mutations
+    collectPrize(gem) {
+        this._gems++;
+        gem.pickup();
+    }
+
+    losePrize() {
+        this._gems = Math.max(0, this._gems - 1);
+    }
+
+    respawn() {
+        this.moveTo(this._startX, this._startY);
+        this.resetVitality();
+    }
+
+    /**
+     * The Player's turn implementation:
+     * Pauses the entire game loop until a valid key is pressed.
+     */
+    async takeTurn(grid, entities) {
+        return new Promise((resolve) => {
+            const handleInput = async (e) => {
+                const k = e.key.toLowerCase();
+                let dx = 0, dy = 0;
+
+                if (k === 'w' || k === 'arrowup') dy = -1;
+                else if (k === 's' || k === 'arrowdown') dy = 1;
+                else if (k === 'a' || k === 'arrowleft') dx = -1;
+                else if (k === 'd' || k === 'arrowright') dx = 1;
+
+                if (dx !== 0 || dy !== 0) {
+                    const tx = this.x + dx;
+                    const ty = this.y + dy;
+                    const target = entities.find(ent => ent.x === tx && ent.y === ty && ent !== this);
+
+                    if (target instanceof Monster) {
+                        window.removeEventListener('keydown', handleInput);
+                        resolve(true);
+                    } else if (target instanceof Gem) {
+                        this.collectPrize(target);
+                        this.moveTo(tx, ty);
+                        window.removeEventListener('keydown', handleInput);
+                        resolve(true);
+                    } else if (grid[ty][tx] === ' ' || grid[ty][tx] === 'D') {
+                        if (grid[ty][tx] === 'D') grid[ty][tx] = ' ';
+                        this.moveTo(tx, ty);
+                        window.removeEventListener('keydown', handleInput);
+                        resolve(true);
+                    }
+                }
+            };
+            window.addEventListener('keydown', handleInput);
+        });
+    }
+}
+
+class Monster extends CombatEntity {
+    constructor(x, y) {
+        super(x, y, 'M', 'monster', 2);
+        this._memory = [];
+        this._currentStep = 0;
+    }
+
+    prepareForCombat() {
+        this.resetVitality();
+        this._currentStep = 0;
+    }
+
+    getNextProblem() {
+        if (this._currentStep < this._memory.length) {
+            return this._memory[this._currentStep];
+        } else {
+            const isFive = Math.random() < 0.75;
+            const n1 = isFive ? 5 : Math.floor(Math.random() * 4) + 1;
+            const n2 = Math.floor(Math.random() * 12) + 1;
+            const problem = { n1, n2, ans: n1 * n2 };
+            this._memory.push(problem);
+            return problem;
+        }
+    }
+
+    advanceCombatStep() { this._currentStep++; }
+
+async takeTurn(grid, entities, player) {
+        if (this.isDead) return false;
+
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+
+        if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
+            // This now blocks the entire runGame loop until endCombat calls resolve()
+            await initiateCombat(this);
+        } else {
+            const nx = this.x + (dx > 0 ? 1 : dx < 0 ? -1 : 0);
+            const ny = this.y + (dy > 0 ? 1 : dy < 0 ? -1 : 0);
+            const occupant = entities.find(ent => ent.x === nx && ent.y === ny);
+            
+            if (grid[ny][nx] === ' ' && !occupant) {
+                this.moveTo(nx, ny);
+            }
+        }
+        
+        // Return false if dead, which will remove it from entities in the next filter
+        return !this.isDead;
+    }
+}
+
+/** * --- ENGINE ---
+ */
+let entities = []; // Single source of truth for all map objects
+const width = 60; const height = 25;
+let grid = [];
+let player;
+let currentCombat = {};
+
+function initWorld() {
+    grid = Array.from({length: height}, () => Array(width).fill('#'));
+    const rooms = [];
+    
+    // Generate simple dungeon
+    for (let i = 0; i < 10; i++) {
+        let w = 6, h = 4;
+        let x = Math.floor(Math.random() * (width - w - 2)) + 1;
+        let y = Math.floor(Math.random() * (height - h - 2)) + 1;
+        const newRoom = { x1: x, y1: y, x2: x + w, y2: y + h, cx: Math.floor(x + w/2), cy: Math.floor(y + h/2) };
+        
+        if (!rooms.some(r => !(newRoom.x1 > r.x2 + 1 || newRoom.x2 < r.x1 - 1 || newRoom.y1 > r.y2 + 1 || newRoom.y2 < r.y1 - 1))) {
+            rooms.push(newRoom);
+            for (let ry = newRoom.y1; ry < newRoom.y2; ry++)
+                for (let rx = newRoom.x1; rx < newRoom.x2; rx++) grid[ry][rx] = ' ';
+            if (rooms.length > 1) {
+                const prev = rooms[rooms.length - 2];
+                digTunnel(prev.cx, prev.cy, newRoom.cx, newRoom.cy);
+            }
+        }
+    }
+    
+    // 1. Initialize Player
+    player = new Player(rooms[0].cx, rooms[0].cy);
+    entities.push(player);
+
+    // 2. Initialize Map Entities
+    rooms.slice(1).forEach(room => {
+        if (Math.random() > 0.4) {
+            entities.push(new Monster(room.cx, room.cy));
+        }
+        if (Math.random() > 0.5) {
+            entities.push(new Gem(room.x1 + 1, room.y1 + 1));
+        }
+    });
+    
+    draw();
+}
+
+/** * --- THE UNIFIED LOOP ---
+ */
+async function runGame() {
+    while (true) {
+        // 1. Map all entities to their takeTurn promises
+        // 2. Await all of them (The Player's turn will hold the line)
+        // 3. Filter the results
+        const results = await Promise.all(
+            entities.map(e => e.takeTurn(grid, entities, player))
+        );
+
+        entities = entities.filter((_, index) => results[index]);
+
+        draw();
+    }
+}
+
+function draw() {
+    let out = "";
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            // Find entity at this coordinate
+            const entity = entities.find(e => e.x === x && e.y === y);
+            
+            if (entity) {
+                out += `<span class="${entity.colorClass}">${entity.symbol}</span>`;
+            } else if (grid[y][x] === '#') {
+                out += `<span class="wall">#</span>`;
+            } else if (grid[y][x] === 'D') {
+                out += `<span class="door">D</span>`;
+            } else {
+                out += " ";
+            }
+        }
+        out += "\n";
+    }
+    // Update stats using player reference
+    document.getElementById('game-board').innerHTML = out;
+    document.getElementById('gem-count').innerText = player.gems;
+    document.getElementById('p-hp').innerText = player.hp;
+}
+
+function digTunnel(x1, y1, x2, y2) {
+    let x = x1, y = y1;
+    while (x !== x2) { grid[y][x] = (grid[y][x] === '#') ? 'D' : grid[y][x]; x += (x < x2) ? 1 : -1; if (grid[y][x] === '#') grid[y][x] = ' '; }
+    while (y !== y2) { grid[y][x] = (grid[y][x] === '#') ? 'D' : grid[y][x]; y += (y < y2) ? 1 : -1; if (grid[y][x] === '#') grid[y][x] = ' '; }
+}
+
+function addLog(msg, highlight = false) {
+    const log = document.getElementById('log-text');
+    const entry = document.createElement('div');
+    if (highlight) entry.style.color = '#fff';
+    entry.innerText = "> " + msg;
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+}
+
+function initiateCombat(monster) {
+    return new Promise((resolve) => {
+        monster.prepareForCombat();
+        
+        // Define the combat state including the resolver
+        currentCombat = { 
+            active: true, 
+            monster: monster, 
+            turn: 'player', 
+            problem: null,
+            resolve: resolve // Store the promise resolver here
+        };
+        
+        document.getElementById('combat-window').style.display = 'flex';
+        document.getElementById('log-text').innerHTML = '';
+        addLog("MONSTER ENGAGED. MEMORY RETRIEVED.", true);
+        nextCombatTurn();
+    });
+}
+
+function nextCombatTurn() {
+    currentCombat.problem = currentCombat.monster.getNextProblem();
+    const { n1, n2 } = currentCombat.problem;
+    const prompt = currentCombat.turn === 'player' ? "ATTACK CODE:" : "DEFEND CODE:";
+    addLog(`${currentCombat.turn.toUpperCase()} TURN. ${prompt}`);
+    document.getElementById('math-q').innerText = `${n1} x ${n2}`;
+    document.getElementById('math-input').value = '';
+    document.getElementById('math-input').focus();
+}
+
+document.getElementById('math-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && currentCombat && currentCombat.active) {
+        const val = parseInt(e.target.value);
+        const isCorrect = (val === currentCombat.problem.ans);
+        const m = currentCombat.monster;
+
+        if (currentCombat.turn === 'player') {
+            if (isCorrect) {
+                m.takeDamage(1);
+                addLog("HIT! MONSTER HP DROPS.");
+            } else {
+                addLog("ATTACK FAILED.");
+            }
+            if (m.isDead) {
+                addLog("MONSTER DESTROYED.", true);
+                endCombat(true);
+            } else {
+                currentCombat.turn = 'monster';
+                m.advanceCombatStep(); // Move to next memory slot
+                setTimeout(nextCombatTurn, 600);
+            }
+        } else {
+            if (isCorrect) {
+                addLog("DEFENSE SUCCESSFUL.", true);
+            } else {
+                player.takeDamage(1);
+                addLog("CRITICAL ERROR. PLAYER DAMAGED.");
+                document.getElementById('p-hp').innerText = player.hp;
+            }
+            if (player.isDead) {
+                addLog("SYSTEM FAILURE. REBOOTING...", true);
+                endCombat(false);
+            } else {
+                currentCombat.turn = 'player';
+                m.advanceCombatStep(); // Move to next memory slot
+                setTimeout(nextCombatTurn, 600);
+            }
+        }
+    }
+});
+
+function endCombat(won) {
+    // We remove the timeout delay to ensure the filter captures the death immediately
+    if (!won) {
+        player.losePrize();
+        player.respawn();
+    }
+    
+    const resolver = currentCombat.resolve; // Capture the promise resolver
+    currentCombat.active = false;
+    document.getElementById('combat-window').style.display = 'none';
+    
+    // Resolving this promise allows the entity's takeTurn to finally finish
+    resolver(); 
+}
+
+initWorld(); runGame();
+</script>
+</body>
+</html>

@@ -132,9 +132,9 @@
     const entry = db[streamId];
     if (!entry) return console.error("No data for:", streamId);
 
-    const streamDate = new Intl.DateTimeFormat('en-CA').format(entry.streamDate);
+    const streamDate = new Intl.DateTimeFormat('en-CA').format(new Date(entry.streamDate));
     
-    const title = entry.channel + " - " streamDate +  " - " + entry.title || "Unknown Stream";
+    const title = entry.channel + " - " + streamDate +  " - " + entry.title || "Unknown Stream";
     const messages = entry.messages || [];
     
     const text = messages.map(m => `[${m.timestamp}] ${m.user}: ${m.message}`).join('\n');
@@ -145,7 +145,7 @@
     
     
     // Use the title in the filename (cleaned of illegal characters)
-    const safeTitle = title.replace(/[^\w\s]/gi, '').substring(0, 50);
+    const safeTitle = title.replace(/[^\w\s-]/gi, '').substring(0, 50);
     a.download = `chat_${safeTitle || streamId}.txt`;
     a.click();
   }

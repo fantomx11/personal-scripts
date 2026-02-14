@@ -8,8 +8,8 @@
   const urlParams = new URLSearchParams(window.parent.location.search);
   const STREAM_ID = urlParams.get('v') || 'unknown_stream';
 
-  const STREAM_TITLE = document.getElementById("title").innerText;
-  const STREAM_DATE = new Intl.DateTimeFormat('en-CA').format(new Date(document.querySelector("#description #tooltip").innerText.trim().split(" ").slice(-3).join(" ")));
+  const STREAM_TITLE = window.parent.document.getElementById("title").innerText;
+  const STREAM_DATE = new Intl.DateTimeFormat('en-CA').format(new Date(window.parent.document.querySelector("#description #tooltip").innerText.trim().split(" ").slice(-3).join(" ")));
   const CHANNEL_NAME = window.parent.document.querySelector("#owner #channel-name").innerText;
   const SCRAPE_DATE = new Date();
 

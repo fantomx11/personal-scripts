@@ -9,7 +9,7 @@
   const STREAM_ID = urlParams.get('v') || 'unknown_stream';
 
   const STREAM_TITLE = window.parent.document.getElementById("title").innerText;
-  const STREAM_DATE = new Intl.DateTimeFormat('en-CA').format(new Date(window.parent.document.querySelector("#description #tooltip").innerText.trim().split(" ").slice(-3).join(" ")));
+  const STREAM_DATE = new Date(window.parent.document.querySelector("#description #tooltip").innerText.trim().split(" ").slice(-3).join(" ")) || new Date();
   const CHANNEL_NAME = window.parent.document.querySelector("#owner #channel-name").innerText;
   const SCRAPE_DATE = new Date();
 
@@ -132,7 +132,9 @@
     const entry = db[streamId];
     if (!entry) return console.error("No data for:", streamId);
 
-    const title = entry.channel + " - " + entry.title || "Unknown Stream";
+    const streamDate = new Intl.DateTimeFormat('en-CA').format(entry.streamDate);
+    
+    const title = entry.channel + " - " streamDate +  " - " + entry.title || "Unknown Stream";
     const messages = entry.messages || [];
     
     const text = messages.map(m => `[${m.timestamp}] ${m.user}: ${m.message}`).join('\n');
@@ -140,6 +142,8 @@
     const blob = new Blob([text], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
+    
+    
     // Use the title in the filename (cleaned of illegal characters)
     const safeTitle = title.replace(/[^\w\s]/gi, '').substring(0, 50);
     a.download = `chat_${safeTitle || streamId}.txt`;

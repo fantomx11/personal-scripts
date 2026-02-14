@@ -98,6 +98,8 @@
     chatDB[STREAM_ID] = {
       title: STREAM_TITLE,
       channel: CHANNEL_NAME,
+      streamDate: STREAM_DATE,
+      scrapeDate: SCRAPE_DATE,
       messages: liveChatLog
     };
   

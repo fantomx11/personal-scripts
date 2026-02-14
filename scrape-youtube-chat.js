@@ -178,6 +178,7 @@
       id,
       channel: currentDB[id].channel,
       title: currentDB[id].title,
+      date: currentDB[id].streamDate,
       messages: currentDB[id].messages.length
     }));
   }

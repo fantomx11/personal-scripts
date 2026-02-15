@@ -3,13 +3,23 @@
     window.ytChatScraper.observer.disconnect();
     console.log("Existing observer disconnected to prevent duplicates.");
   }
+
+  function extractDate(input) {
+    const dateRegex = /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s\d{1,2},\s\d{4}/;
+    const extractedDate = input.match(dateRegex);
+    if (extractedDate) {
+      return extractedDate[0];
+    } else {
+      console.log("No date found.");
+    }
+  }
   
   const DB_KEY = 'yt_chat_database';
   const urlParams = new URLSearchParams(window.parent.location.search);
   const STREAM_ID = urlParams.get('v') || 'unknown_stream';
 
   const STREAM_TITLE = window.parent.document.getElementById("title").innerText;
-  const STREAM_DATE = new Date(window.parent.document.querySelector("#description #tooltip").innerText.trim().split(" ").slice(-3).join(" ")) || new Date();
+  const STREAM_DATE = new Date(extractDate(window.parent.document.querySelector("#description #tooltip").innerText.trim())) || new Date();
   const CHANNEL_NAME = window.parent.document.querySelector("#owner #channel-name").innerText;
   const SCRAPE_DATE = new Date();
 
@@ -23,6 +33,8 @@
   let liveChatLog = streamData.messages;
   const seenKeys = new Set(liveChatLog.map(m => `${m.timestamp}|${m.user}|${m.message}`));
 
+
+  
   function getSortableTime(ts) {
     if (ts.startsWith('-') || !ts.includes('M')) {
       const isNeg = ts.startsWith('-');

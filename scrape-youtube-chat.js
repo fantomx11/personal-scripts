@@ -1,6 +1,7 @@
 /**
  * YouTube Live Chat Scraper
  * A tool to observe, capture, and persist YouTube live chat messages to localStorage.
+ * 
  * * @author Gemini
  * @version 1.1.0
  */
@@ -18,10 +19,10 @@
   const streamId = urlParams.get('v') || 'unknown_stream';
 
   /** @type {string} Metadata pulled from the parent YouTube page */
-  const streamTitle = window.parent.document.getElementById("title")?.innerText || "Untitled";
+  const title = window.parent.document.getElementById("title")?.innerText || "Untitled";
   const descElement = window.parent.document.querySelector("#description #tooltip");
   const streamDate = descElement ? new Date(extractDate(descElement.innerText.trim())) : new Date();
-  const channelName = window.parent.document.querySelector("#owner #channel-name")?.innerText || "Unknown Channel";
+  const channel = window.parent.document.querySelector("#owner #channel-name")?.innerText || "Unknown Channel";
   const scrapeDate = new Date();
 
   /** @type {Object} The internal database loaded from storage */
@@ -33,13 +34,16 @@
    * @property {string} message - Content of the message
    */
 
-  let streamData = chatDB[streamId] || { title: streamTitle, channel: channelName, messages: [] };
+  let streamData = chatDB[streamId] || {
+    title,
+    channel,
+    messages: [],
+    streamDate,
+    scrapeDate
+  };
 
-  /** @type {ChatMessage[]} The active log for the current session */
-  let liveChatLog = Array.isArray(streamData) ? streamData : streamData.messages;
-  
   /** @type {Set<string>} Unique keys to prevent duplicate entries */
-  const seenKeys = new Set(liveChatLog.map(m => `${m.timestamp}|${m.user}|${m.message}`));
+  const seenKeys = new Set(streamData.messages.map(m => `${m.timestamp}|${m.user}|${m.message}`));
 
   // #endregion
 
@@ -93,7 +97,8 @@
     const key = `${timestamp}|${user}|${message}`;
     if (!seenKeys.has(key)) {
       seenKeys.add(key);
-      liveChatLog.push({ timestamp, user, message });
+    
+      streamData.messages.push({ timestamp, user, message });
       return true;
     }
     return false;
@@ -144,18 +149,13 @@
    * Syncs the in-memory chat log to the browser's localStorage.
    */
   function persistToStorage() {
-    liveChatLog.sort((a, b) => getSortableTime(a.timestamp) - getSortableTime(b.timestamp));
+    streamData.messages.sort((a, b) => getSortableTime(a.timestamp) - getSortableTime(b.timestamp));
 
-    chatDB[streamId] = {
-      title: streamTitle,
-      channel: channelName,
-      streamDate: streamDate,
-      scrapeDate: scrapeDate,
-      messages: liveChatLog
-    };
+    chatDB[streamId] = streamData;
 
     try {
       localStorage.setItem(dbKey, JSON.stringify(chatDB));
+      console.log(`Database updated for ${STREAM_ID}. Total in this stream: ${liveChatLog.length}`);
     } catch (e) {
       console.error("Storage full! Database exceeds 5MB.", e);
     }
@@ -195,7 +195,7 @@
     if (chatContainer) {
       scrapeExisting();
       observer.observe(chatContainer, { childList: true });
-      console.log(`Scraper active for: ${streamTitle}`);
+      console.log(`Scraper active for: ${title}`);
     } else {
       console.error("Wrong context! Switch the console to 'chatframe'.");
     }
@@ -222,14 +222,14 @@
   function clearVault(id) {
     if (id === undefined) {
       localStorage.removeItem(dbKey);
-      liveChatLog = [];
+      streamData.messages = [];
       seenKeys.clear();
     } else {
       const db = JSON.parse(localStorage.getItem(dbKey) || '{}');
       delete db[id];
       localStorage.setItem(dbKey, JSON.stringify(db));
       if (id === streamId) {
-        liveChatLog = [];
+        streamData.messages = [];
         seenKeys.clear();
       }
     }
@@ -237,7 +237,7 @@
   }
 
   function previewLog() {
-    console.log(liveChatLog.slice(-20).map(m => `[${m.timestamp}] ${m.user}: ${m.message}`).join('\n'));
+    console.log(streamData.messages.slice(-20).map(m => `[${m.timestamp}] ${m.user}: ${m.message}`).join('\n'));
   }
 
   init();
@@ -249,7 +249,8 @@
     previewLog,
     init,
     listLogs,
-    observer
+    observer,
+    streamData
   };
 
   // #endregion

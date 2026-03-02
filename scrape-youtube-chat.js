@@ -155,7 +155,7 @@
 
     try {
       localStorage.setItem(dbKey, JSON.stringify(chatDB));
-      console.log(`Database updated for ${STREAM_ID}. Total in this stream: ${liveChatLog.length}`);
+      console.log(`Database updated for ${streamId}. Total in this stream: ${streamData.messages.length}`);
     } catch (e) {
       console.error("Storage full! Database exceeds 5MB.", e);
     }

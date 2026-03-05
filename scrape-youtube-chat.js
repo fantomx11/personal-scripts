@@ -320,6 +320,17 @@
 
     const htmlContent = `
       <h2>Live Scraper Controller</h2>
+
+      <div class="card" style="border-left: 4px solid #00ff00; background: #1a2a1a;">
+        <label style="color: #00ff00;">Live Session Status</label>
+        <div style="font-size: 24px; font-weight: bold;">
+          <span id="live-count">${streamData.messages.length.toLocaleString()}</span> 
+          <span style="font-size: 14px; color: #888; font-weight: normal;">messages</span>
+        </div>
+        <button id="btn-reconnect" style="margin-top: 10px; background: #2e7d32; color: white; font-size: 11px;">
+          🔄 Reconnect Scraper (Fix Chat Switch)
+        </button>
+      </div>
       
       <div class="card">
         <label>Current Stream Title</label>
@@ -355,6 +366,16 @@
 
     // --- BINDING EVENTS ---
     const doc = ytChatScraper.controlWindow.document;
+
+    // Reconnect Logic
+    doc.getElementById('btn-reconnect').onclick = () => {
+      const success = init();
+      if (success) {
+        alert("Scraper reconnected to the current chat view.");
+      } else {
+        alert("Failed to reconnect. Make sure chat is visible.");
+      }
+    };
 
     doc.getElementById('btn-update').onclick = () => {
       streamData.title = doc.getElementById('pop-title').value;

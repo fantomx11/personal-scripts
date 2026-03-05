@@ -150,14 +150,16 @@
    */
   function persistToStorage() {
     streamData.messages.sort((a, b) => getSortableTime(a.timestamp) - getSortableTime(b.timestamp));
-
     chatDB[streamId] = streamData;
 
     try {
       localStorage.setItem(dbKey, JSON.stringify(chatDB));
-      console.log(`Database updated for ${streamId}. Total in this stream: ${streamData.messages.length}`);
+      console.log(`Database updated for ${streamId}. Total: ${streamData.messages.length}`);
+      
+      // NEW: Update the pop-up counter if the window is open
+      updateLiveCounter();
     } catch (e) {
-      console.error("Storage full! Database exceeds 5MB.", e);
+      console.error("Storage full!", e);
     }
   };
 
@@ -250,8 +252,148 @@
     init,
     listLogs,
     observer,
-    streamData
+    streamData,
+    controlWindow: null,
+    openController
   };
+
+  // #endregion
+
+// #region --- SECURE UI CONTROLLER ---
+
+  function updateLiveCounter() {
+    if (ytChatScraper.controlWindow && !ytChatScraper.controlWindow.closed) {
+      const counterEl = ytChatScraper.controlWindow.document.getElementById('live-count');
+      if (counterEl) {
+        counterEl.innerText = streamData.messages.length.toLocaleString();
+      }
+    }
+  }
+
+  /** * Create a Trusted Types policy to bypass "TrustedHTML" blocks 
+   */
+  const policy = window.trustedTypes?.createPolicy('youtube-scraper-policy', {
+    createHTML: (string) => string
+  }) || { createHTML: (string) => string };
+
+  function openController() {
+    // Open a standalone window
+    ytChatScraper.controlWindow = window.open("", "ytScraperControl", "width=420,height=750,menubar=no,status=no");
+    
+    if (!ytChatScraper.controlWindow) {
+      console.error("Pop-up blocked! Please enable pop-ups for YouTube.");
+      return;
+    }
+
+    // Inject styles securely
+    const style = ytChatScraper.controlWindow.document.createElement('style');
+    style.textContent = `
+      body { background: #121212; color: #e0e0e0; font-family: 'Segoe UI', Roboto, sans-serif; padding: 20px; line-height: 1.5; }
+      h2 { color: #ff0000; font-size: 20px; margin-top: 0; border-bottom: 2px solid #333; padding-bottom: 10px; }
+      .card { background: #1e1e1e; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; }
+      label { display: block; font-size: 12px; color: #aaa; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+      input { width: 100%; background: #2d2d2d; border: 1px solid #444; color: white; padding: 10px; margin-bottom: 15px; border-radius: 4px; box-sizing: border-box; }
+      button { width: 100%; padding: 10px; cursor: pointer; margin-bottom: 10px; border: none; border-radius: 4px; font-weight: bold; transition: opacity 0.2s; }
+      button:hover { opacity: 0.8; }
+      .btn-primary { background: #3ea6ff; color: #000; }
+      .btn-secondary { background: #444; color: white; }
+      .btn-danger { background: transparent; color: #ff4e4e; border: 1px solid #ff4e4e; margin-top: 20px; }
+      .vault-item { background: #252525; padding: 10px; margin-bottom: 10px; border-radius: 6px; border-left: 3px solid #3ea6ff; }
+      .vault-title { font-weight: bold; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .vault-meta { font-size: 11px; color: #888; }
+      .vault-actions { display: flex; gap: 15px; margin-top: 8px; font-size: 12px; }
+      .vault-actions a { color: #3ea6ff; text-decoration: none; cursor: pointer; }
+      .vault-actions a.del { color: #ff4e4e; }
+    `;
+    ytChatScraper.controlWindow.document.head.appendChild(style);
+
+    renderPopupContent();
+  }
+
+  function renderPopupContent() {
+    if (!ytChatScraper.controlWindow) return;
+
+    const logs = listLogs();
+    const dateVal = streamData.streamDate instanceof Date 
+      ? streamData.streamDate.toISOString().split('T')[0] 
+      : new Date().toISOString().split('T')[0];
+
+    const htmlContent = `
+      <h2>Live Scraper Controller</h2>
+      
+      <div class="card">
+        <label>Current Stream Title</label>
+        <input type="text" id="pop-title" value="${streamData.title}">
+        
+        <label>Stream Date</label>
+        <input type="date" id="pop-date" value="${dateVal}">
+        
+        <button class="btn-primary" id="btn-update">Save Metadata</button>
+        <button class="btn-secondary" id="btn-dl-current">Download Current Log (.txt)</button>
+        <button class="btn-secondary" id="btn-view-current">Open Text Preview</button>
+      </div>
+
+      <h3>Stream Vault</h3>
+      <div id="vault-list">
+        ${logs.length === 0 ? '<p style="color:#666">No saved logs found.</p>' : logs.map(log => `
+          <div class="vault-item">
+            <span class="vault-title">${log.title}</span>
+            <span class="vault-meta">${log.messages} messages • ID: ${log.id}</span>
+            <div class="vault-actions">
+              <a data-id="${log.id}" class="vault-dl">Download</a>
+              <a data-id="${log.id}" class="vault-del del">Delete</a>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <button class="btn-danger" id="btn-clear-vault">Wipe All Stored Data</button>
+    `;
+
+    // Apply HTML via the Trusted Types policy
+    ytChatScraper.controlWindow.document.body.innerHTML = policy.createHTML(htmlContent);
+
+    // --- BINDING EVENTS ---
+    const doc = ytChatScraper.controlWindow.document;
+
+    doc.getElementById('btn-update').onclick = () => {
+      streamData.title = doc.getElementById('pop-title').value;
+      streamData.streamDate = new Date(doc.getElementById('pop-date').value);
+      persistToStorage();
+      alert("Metadata updated for this session.");
+    };
+
+    doc.getElementById('btn-dl-current').onclick = () => downloadLog();
+
+    doc.getElementById('btn-view-current').onclick = () => {
+      const logText = streamData.messages.map(m => `[${m.timestamp}] ${m.user}: ${m.message}`).join('\n');
+      const viewWin = window.open("", "_blank");
+      viewWin.document.body.innerHTML = policy.createHTML(`<pre style="word-wrap: break-word; white-space: pre-wrap;">${logText}</pre>`);
+    };
+
+    doc.getElementById('btn-clear-vault').onclick = () => {
+      if(confirm("This will permanently delete ALL logs in localStorage. Proceed?")) {
+        clearVault();
+        renderPopupContent();
+      }
+    };
+
+    doc.querySelectorAll('.vault-dl').forEach(el => {
+      el.onclick = () => downloadLog(el.dataset.id);
+    });
+    
+    doc.querySelectorAll('.vault-del').forEach(el => {
+      el.onclick = () => {
+        if(confirm("Delete this log?")) {
+          clearVault(el.dataset.id);
+          renderPopupContent();
+        }
+      };
+    });
+  }
+
+  // Start the controller
+  openController();
 
   // #endregion
 })();

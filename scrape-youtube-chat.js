@@ -349,7 +349,7 @@
         ${logs.length === 0 ? '<p style="color:#666">No saved logs found.</p>' : logs.map(log => `
           <div class="vault-item">
             <span class="vault-title">${log.title}</span>
-            <span class="vault-meta">${log.messages} messages • ID: ${log.id}</span>
+            <span class="vault-meta">channel: ${log.channel} • ${log.messages} messages • ID: ${log.id}</span>
             <div class="vault-actions">
               <a data-id="${log.id}" class="vault-dl">Download</a>
               <a data-id="${log.id}" class="vault-del del">Delete</a>

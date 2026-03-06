@@ -112,8 +112,28 @@
   function processNode(node) {
     const timestamp = node.querySelector('#timestamp')?.innerText.trim();
     const user = node.querySelector('#author-name')?.innerText.trim();
-    const message = node.querySelector('#message')?.innerText.trim();
-    return saveMessage({ timestamp, user, message });
+    const isModerator = user?.classList.includes("moderator") || false;
+
+    let fullMessage = "";
+    messageElement.childNodes.forEach(child => {
+      if (child.nodeType === Node.TEXT_NODE) {
+        fullMessage += child.textContent;
+      } else if (child.nodeName === 'IMG') {
+        let alt = child.getAttribute('alt') || "";
+        
+        // Logic: If the alt text is alphanumeric/hyphens only (no actual emoji character), 
+        // it's likely a custom emote name. Wrap it in colons.
+        const isCustomEmote = /^[a-zA-Z0-9-_]+$/.test(alt);
+        
+        if (isCustomEmote && !alt.startsWith(':')) {
+          fullMessage += `:${alt}:`;
+        } else {
+          fullMessage += alt;
+        }
+      }
+    });
+
+    return saveMessage({ timestamp, user, isModerator, message: fullMessage.trim() });
   }
 
   /**
@@ -174,7 +194,7 @@
 
     const dateFormatted = new Intl.DateTimeFormat('en-CA').format(new Date(entry.streamDate));
     const title = `${entry.channel} - ${dateFormatted} - ${entry.title}`;
-    const text = entry.messages.map(m => `[${m.timestamp}] ${m.user}: ${m.message}`).join('\n');
+    const text = entry.messages.map(m => `[${m.timestamp}] ${m.user}${m.isModerator ? ' (m)' : ''}: ${m.message}`).join('\n');
 
     const blob = new Blob([text], { type: 'text/plain' });
     const a = document.createElement('a');
@@ -415,6 +435,8 @@
 
   // Start the controller
   openController();
+
+  setTimeout(openController, 1000);
 
   // #endregion
 })();

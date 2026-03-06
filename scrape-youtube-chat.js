@@ -42,6 +42,8 @@
     scrapeDate
   };
 
+  const messageToText = m => `[${m.timestamp}] ${m.user}${m.isModerator ? ' (m)' : ''}: ${m.message}`;
+
   /** @type {Set<string>} Unique keys to prevent duplicate entries */
   const seenKeys = new Set(streamData.messages.map(m => `${m.timestamp}|${m.user}|${m.message}`));
 
@@ -90,7 +92,7 @@
    * @param {ChatMessage} param0 - The message components.
    * @returns {boolean} True if message was unique and added.
    */
-  function saveMessage({ timestamp, user, message }) {
+  function saveMessage({ timestamp, user, isModerator, message }) {
     if (!timestamp || !user || !message) return false;
     timestamp = timestamp.replace(/\u202F|\s/g, ' ').trim();
 
@@ -98,7 +100,7 @@
     if (!seenKeys.has(key)) {
       seenKeys.add(key);
     
-      streamData.messages.push({ timestamp, user, message });
+      streamData.messages.push({ timestamp, user, isModerator, message });
       return true;
     }
     return false;
@@ -112,7 +114,8 @@
   function processNode(node) {
     const timestamp = node.querySelector('#timestamp')?.innerText.trim();
     const user = node.querySelector('#author-name')?.innerText.trim();
-    const isModerator = user?.classList.includes("moderator") || false;
+    const isModerator = node.querySelector('#author-name')?.classList.contains("moderator") || false;
+    const messageElement = node.querySelector('#message');
 
     let fullMessage = "";
     messageElement.childNodes.forEach(child => {
@@ -194,7 +197,7 @@
 
     const dateFormatted = new Intl.DateTimeFormat('en-CA').format(new Date(entry.streamDate));
     const title = `${entry.channel} - ${dateFormatted} - ${entry.title}`;
-    const text = entry.messages.map(m => `[${m.timestamp}] ${m.user}${m.isModerator ? ' (m)' : ''}: ${m.message}`).join('\n');
+    const text = entry.messages.map(messageToText).join('\n');
 
     const blob = new Blob([text], { type: 'text/plain' });
     const a = document.createElement('a');
@@ -407,7 +410,7 @@
     doc.getElementById('btn-dl-current').onclick = () => downloadLog();
 
     doc.getElementById('btn-view-current').onclick = () => {
-      const logText = streamData.messages.map(m => `[${m.timestamp}] ${m.user}: ${m.message}`).join('\n');
+      const logText = streamData.messages.map(messageToText).join('\n');
       const viewWin = window.open("", "_blank");
       viewWin.document.body.innerHTML = policy.createHTML(`<pre style="word-wrap: break-word; white-space: pre-wrap;">${logText}</pre>`);
     };

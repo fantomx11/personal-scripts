@@ -314,7 +314,7 @@
     if (!ytChatScraper.controlWindow) return;
 
     const logs = listLogs();
-    const dateVal = streamData.streamDate instanceof Date 
+    const dateVal = (streamData.streamDate instanceof Date || isNaN(streamData.streamDate))
       ? streamData.streamDate.toISOString().split('T')[0] 
       : new Date().toISOString().split('T')[0];
 

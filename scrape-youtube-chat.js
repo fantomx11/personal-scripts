@@ -285,7 +285,7 @@
 // #region --- SECURE UI CONTROLLER ---
 
   function updateLiveCounter() {
-    if (ytChatScraper.controlWindow && !ytChatScraper.controlWindow.closed) {
+    if (ytChatScraper && ytChatScraper.controlWindow && !ytChatScraper.controlWindow.closed) {
       const counterEl = ytChatScraper.controlWindow.document.getElementById('live-count');
       if (counterEl) {
         counterEl.innerText = streamData.messages.length.toLocaleString();
@@ -337,7 +337,7 @@
     if (!ytChatScraper.controlWindow) return;
 
     const logs = listLogs();
-    const dateVal = (streamData.streamDate instanceof Date || isNaN(streamData.streamDate))
+    const dateVal = (streamData.streamDate instanceof Date && !isNaN(streamData.streamDate))
       ? streamData.streamDate.toISOString().split('T')[0] 
       : new Date().toISOString().split('T')[0];
 

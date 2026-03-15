@@ -153,8 +153,7 @@
     }
 
     // Handle System Moderation Messages (Timeouts/Bans shown in chat)
-    if (node.nodeName === 'YT-LIVE-CHAT-MODERATION-MESSAGE-RENDERER' || 
-              node.nodeName === 'YT-LIVE-CHAT-MODERATION-MESSAGE-RENDERER') {
+    if (node.nodeName === 'YT-LIVE-CHAT-MODERATION-MESSAGE-RENDERER') {
       const modMessage = node.querySelector('#message')?.innerText.trim();
       return saveMessage({
         timestamp,
@@ -200,7 +199,8 @@
       // 1. Handle brand new messages
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
         mutation.addedNodes.forEach(node => {
-          if (node.nodeName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER') {
+          if (node.nodeName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER' || 
+              node.nodeName === 'YT-LIVE-CHAT-MODERATION-MESSAGE-RENDERER') {
             newMessagesFound = processNode(node) || newMessagesFound;
           }
         });

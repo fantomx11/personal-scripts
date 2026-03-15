@@ -42,7 +42,7 @@
     scrapeDate
   };
 
-  const messageToText = m => `[${m.timestamp}] ${m.user}${m.isModerator ? ' (m)' : ''}: ${m.message}`;
+  const messageToText = m => `[${m.timestamp}] ${m.user}${m.isModerator ? ' (m)' : ''}: ${m.message}${m.deletedState ? ` [${m.deletedState}]` :  ''}`;
 
   /** @type {Set<string>} Unique keys to prevent duplicate entries */
   const seenKeys = new Set(streamData.messages.map(m => `${m.timestamp}|${m.user}|${m.message}`));
@@ -92,58 +92,87 @@
    * @param {ChatMessage} param0 - The message components.
    * @returns {boolean} True if message was unique and added.
    */
-  function saveMessage({ timestamp, user, isModerator, message }) {
+  function saveMessage({ timestamp, user, isModerator, message, deletedState }) {
     if (!timestamp || !user || !message) return false;
     timestamp = timestamp.replace(/\u202F|\s/g, ' ').trim();
 
+    // The key remains based on the original message unique identity
     const key = `${timestamp}|${user}|${message}`;
-    if (!seenKeys.has(key)) {
-      seenKeys.add(key);
     
-      streamData.messages.push({ timestamp, user, isModerator, message });
+    if (!seenKeys.has(key)) {
+      // It's a brand new message
+      seenKeys.add(key);
+      streamData.messages.push({ timestamp, user, isModerator, message, deletedState });
       return true;
+    } else {
+      // Message exists, check if we need to update the deletedState
+      const existingMsg = streamData.messages.find(m => 
+        m.timestamp === timestamp && m.user === user && m.message === message
+      );
+
+      // Only update and return true if the deletedState has actually changed (e.g. from null to "Hidden by X")
+      if (existingMsg && existingMsg.deletedState !== deletedState) {
+        existingMsg.deletedState = deletedState;
+        return true; 
+      }
     }
     return false;
   }
 
-  /**
+/**
    * Processes an individual DOM node into the local data store.
-   * @param {Element} node - The chat message HTML element.
-   * @returns {boolean}
    */
   function processNode(node) {
     const timestamp = node.querySelector('#timestamp')?.innerText.trim();
-    const user = node.querySelector('#author-name')?.innerText.trim();
-    const isModerator = node.querySelector('#author-name')?.classList.contains("moderator") || false;
-    const messageElement = node.querySelector('#message');
+    
+    // Handle Regular Chat Messages
+    if (node.nodeName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER') {
+      const user = node.querySelector('#author-name')?.innerText.trim();
+      const isModerator = node.querySelector('#author-name')?.classList.contains("moderator") || false;
+      const messageElement = node.querySelector('#message');
+      const deletedState = node.querySelector('#deleted-state')?.innerText.trim();
 
-    let fullMessage = "";
-    messageElement.childNodes.forEach(child => {
-      if (child.nodeType === Node.TEXT_NODE) {
-        fullMessage += child.textContent;
-      } else if (child.nodeName === 'IMG') {
-        let alt = child.getAttribute('alt') || "";
-        
-        // Logic: If the alt text is alphanumeric/hyphens only (no actual emoji character), 
-        // it's likely a custom emote name. Wrap it in colons.
-        const isCustomEmote = /^[a-zA-Z0-9-_]+$/.test(alt);
-        
-        if (isCustomEmote && !alt.startsWith(':')) {
-          fullMessage += `:${alt}:`;
-        } else {
-          fullMessage += alt;
+      let fullMessage = "";
+      messageElement.childNodes.forEach(child => {
+        if (child.nodeType === Node.TEXT_NODE) {
+          fullMessage += child.textContent;
+        } else if (child.nodeName === 'IMG') {
+          let alt = child.getAttribute('alt') || "";
+          const isCustomEmote = /^[a-zA-Z0-9-_]+$/.test(alt);
+          fullMessage += (isCustomEmote && !alt.startsWith(':')) ? `:${alt}:` : alt;
         }
-      }
-    });
+      });
 
-    return saveMessage({ timestamp, user, isModerator, message: fullMessage.trim() });
+      return saveMessage({ 
+        timestamp, 
+        user, 
+        isModerator, 
+        message: fullMessage.trim(), 
+        deletedState 
+      });
+    }
+
+    // Handle System Moderation Messages (Timeouts/Bans shown in chat)
+    if (node.nodeName === 'YT-LIVE-CHAT-MODERATION-MESSAGE-RENDERER' || 
+              node.nodeName === 'YT-LIVE-CHAT-MODERATION-MESSAGE-RENDERER') {
+      const modMessage = node.querySelector('#message')?.innerText.trim();
+      return saveMessage({
+        timestamp,
+        user: "MODERATION", // Labeling these as system events
+        isModerator: false,
+        message: modMessage,
+        isSystemAction: true // Flag to distinguish from regular chat
+      });
+    }
+
+    return false;
   }
 
   /**
    * Scrapes all messages currently visible in the chat history.
    */
   function scrapeExisting() {
-    const nodes = document.querySelectorAll('yt-live-chat-text-message-renderer');
+    const nodes = document.querySelectorAll('yt-live-chat-text-message-renderer, yt-live-chat-moderation-message-renderer');
     let newMessagesFound = false;
     nodes.forEach(node => {
       newMessagesFound = processNode(node) || newMessagesFound;
@@ -152,7 +181,7 @@
   };
 
   /** @type {MutationObserver} Watches for new incoming chat nodes */
-  const observer = new MutationObserver((mutations) => {
+ /* const observer = new MutationObserver((mutations) => {
     let newMessagesFound = false;
     for (const mutation of mutations) {
       mutation.addedNodes.forEach(node => {
@@ -160,6 +189,31 @@
           newMessagesFound = processNode(node) || newMessagesFound;
         }
       });
+    }
+    if (newMessagesFound) persistToStorage();
+  });
+*/
+  /** @type {MutationObserver} Watches for new nodes and internal text changes */
+  const observer = new MutationObserver((mutations) => {
+    let newMessagesFound = false;
+    for (const mutation of mutations) {
+      // 1. Handle brand new messages
+      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+        mutation.addedNodes.forEach(node => {
+          if (node.nodeName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER') {
+            newMessagesFound = processNode(node) || newMessagesFound;
+          }
+        });
+      }
+      
+      // 2. Handle updates to existing messages (Deletions/Timeouts)
+      // Checks for text changes (characterData) or internal UI swaps (childList)
+      if (mutation.type === 'characterData' || (mutation.type === 'childList' && mutation.addedNodes.length === 0)) {
+        const messageNode = mutation.target.parentElement?.closest('yt-live-chat-text-message-renderer');
+        if (messageNode) {
+          newMessagesFound = processNode(messageNode) || newMessagesFound;
+        }
+      }
     }
     if (newMessagesFound) persistToStorage();
   });
@@ -214,7 +268,7 @@
   /**
    * Initializes the scraper by finding the chat container and starting the observer.
    */
-  function init() {
+/*  function init() {
     observer.disconnect();
     const chatContainer = document.querySelector('#items.yt-live-chat-item-list-renderer');
     if (chatContainer) {
@@ -225,6 +279,23 @@
       console.error("Wrong context! Switch the console to 'chatframe'.");
     }
   }
+*/
+
+  function init() {
+    observer.disconnect();
+    const chatContainer = document.querySelector('#items.yt-live-chat-item-list-renderer');
+    if (chatContainer) {
+      scrapeExisting();
+      // subtree: true is required to see changes inside the message renderer
+      observer.observe(chatContainer, { 
+        childList: true, 
+        subtree: true, 
+        characterData: true 
+      });
+      console.log(`Scraper active: Capturing all moderation events for ${title}`);
+    }
+  }
+
 
   /**
    * Returns a list of all streams currently saved in the local vault.
@@ -413,6 +484,8 @@
       const logText = streamData.messages.map(messageToText).join('\n');
       const viewWin = window.open("", "_blank");
       viewWin.document.body.innerHTML = policy.createHTML(`<pre style="word-wrap: break-word; white-space: pre-wrap;">${logText}</pre>`);
+      
+      setTimeout(() => viewWin.document.body.innerHTML = policy.createHTML(`<pre style="word-wrap: break-word; white-space: pre-wrap;">${logText}</pre>`), 1000);
     };
 
     doc.getElementById('btn-clear-vault').onclick = () => {

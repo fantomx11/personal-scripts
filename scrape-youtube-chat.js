@@ -179,19 +179,6 @@
     if (newMessagesFound) persistToStorage();
   };
 
-  /** @type {MutationObserver} Watches for new incoming chat nodes */
- /* const observer = new MutationObserver((mutations) => {
-    let newMessagesFound = false;
-    for (const mutation of mutations) {
-      mutation.addedNodes.forEach(node => {
-        if (node.nodeName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER') {
-          newMessagesFound = processNode(node) || newMessagesFound;
-        }
-      });
-    }
-    if (newMessagesFound) persistToStorage();
-  });
-*/
   /** @type {MutationObserver} Watches for new nodes and internal text changes */
   const observer = new MutationObserver((mutations) => {
     let newMessagesFound = false;
@@ -268,19 +255,6 @@
   /**
    * Initializes the scraper by finding the chat container and starting the observer.
    */
-/*  function init() {
-    observer.disconnect();
-    const chatContainer = document.querySelector('#items.yt-live-chat-item-list-renderer');
-    if (chatContainer) {
-      scrapeExisting();
-      observer.observe(chatContainer, { childList: true });
-      console.log(`Scraper active for: ${title}`);
-    } else {
-      console.error("Wrong context! Switch the console to 'chatframe'.");
-    }
-  }
-*/
-
   function init() {
     observer.disconnect();
     const chatContainer = document.querySelector('#items.yt-live-chat-item-list-renderer');

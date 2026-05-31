@@ -32,7 +32,7 @@
    * @property {string} message - Content of the message
    */
 
-  let streamData = chatDB[streamId] || {
+  let streamData = JSON.parse(localStorage.getItem(dbKey) || '{}')[streamId] || {
     title,
     channel,
     messages: [],

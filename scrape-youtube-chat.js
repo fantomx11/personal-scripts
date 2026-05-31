@@ -25,8 +25,6 @@
   const channel = window.parent.document.querySelector("#owner #channel-name")?.innerText || "Unknown Channel";
   const scrapeDate = new Date();
 
-  /** @type {Object} The internal database loaded from storage */
-  const chatDB = JSON.parse(localStorage.getItem(dbKey) || '{}');
 
   /** * @typedef {Object} ChatMessage
    * @property {string} timestamp - Human readable time (e.g., "1:20" or "4:30 PM")
@@ -213,6 +211,9 @@
    * Syncs the in-memory chat log to the browser's localStorage.
    */
   function persistToStorage() {
+    /** @type {Object} The internal database loaded from storage */
+    const chatDB = JSON.parse(localStorage.getItem(dbKey) || '{}');
+
     streamData.messages.sort((a, b) => getSortableTime(a.timestamp) - getSortableTime(b.timestamp));
     chatDB[streamId] = streamData;
 

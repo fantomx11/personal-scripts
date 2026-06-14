@@ -141,7 +141,7 @@
 
             // Format the final output layout
             const textContent = currentMessages
-                .map(m => `[${m.timestamp}] ${m.username}: ${m.content}`)
+                .map(m => `[${m.timestamp.toLocaleString()}] ${m.username}: ${m.content}`)
                 .join('\n\n');
 
             const element = win.document.createElement('a');

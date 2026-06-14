@@ -156,10 +156,45 @@
         }
     }
 
-    // Auto-initialize layout connection
+    // Create a temporary floating trigger button
+    function injectLaunchButton() {
+        // Prevent duplicate buttons if script runs twice
+        if (document.getElementById('vault-launcher-btn')) return;
+
+        const btn = document.createElement('button');
+        btn.id = 'vault-launcher-btn';
+        btn.innerText = '🔓 Open Chat Vault';
+        
+        // Style it to float cleanly in the bottom right corner
+        Object.assign(btn.style, {
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            zIndex: '999999',
+            backgroundColor: '#5865f2',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            padding: '12px 20px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            fontFamily: 'sans-serif',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+        });
+
+        // When clicked, open the vault and remove the button
+        btn.addEventListener('click', () => {
+            connectVault();
+            btn.remove(); 
+        });
+
+        document.body.appendChild(btn);
+    }
+
+    // Initialize by creating the button
     if (document.readyState === 'complete') {
-        connectVault();
+        injectLaunchButton();
     } else {
-        window.addEventListener('load', connectVault);
+        window.addEventListener('load', injectLaunchButton);
     }
 })();

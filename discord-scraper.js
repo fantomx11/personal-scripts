@@ -190,7 +190,7 @@
 
         document.body.appendChild(btn);
     }
-
+debugger;
     // Initialize by creating the button
     if (document.readyState === 'complete') {
         injectLaunchButton();

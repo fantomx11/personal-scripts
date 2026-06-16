@@ -88,6 +88,8 @@
                 
                 const contentElement = messageElement.querySelector('[class*=content]');
 
+                if(!contentElement) return;
+                
                 const usernameEl = contentElement.querySelector('[id^="message-username"]');
                 const timestampEl = contentElement.querySelector('[id^="message-timestamp"]');
                 const contentEl = contentElement.querySelector('[id^="message-content"]');

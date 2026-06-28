@@ -143,6 +143,8 @@
 
             // Format the final output layout
             const textContent = currentMessages
+                .map(({timestamp, ...rest}) => ({timestamp: new Date(timestamp), ...rest}))
+                .sort((a, b) => a.timestamp - b.timestamp)
                 .map(m => `[${new Date(m.timestamp).toLocaleString()}] ${m.username}: ${m.content}`)
                 .join('\n\n');
 

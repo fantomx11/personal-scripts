@@ -40,10 +40,22 @@
     scrapeDate
   };
 
-  const messageToText = m => `[${m.timestamp}] ${m.user}${m.isModerator ? ' (m)' : ''}: ${m.message}${m.deletedState ? ` [${m.deletedState}]` :  ''}`;
+  const messageToText = m => `[${m.timestamp}] ${m.user}${m.isModerator ? ' (m)' : ''}: ${m.message}${m.deletedState ? ` [${m.deletedState}]` : ''}`;
 
-  /** @type {Set<string>} Unique keys to prevent duplicate entries */
-  const seenKeys = new Set(streamData.messages.map(m => `${m.timestamp}|${m.user}|${m.message}`));
+  /** * A Map tracking recent messages by a stable user+time anchor.
+   * Stores 'user|timestamp' -> index in streamData.messages
+   */
+  const messageCache = new Map();
+
+  // Populate on initialization with a strict maximum of the last 100 entries
+  const recentMessagesCount = Math.min(streamData.messages.length, 100);
+  if (recentMessagesCount > 0) {
+    const recentMessages = streamData.messages.slice(-recentMessagesCount);
+    recentMessages.forEach((m, index) => {
+      const anchor = `${m.user}|${m.timestamp}`;
+      messageCache.set(anchor, streamData.messages.length - recentMessagesCount + index);
+    });
+  }
 
   // #endregion
 
@@ -94,35 +106,43 @@
     if (!timestamp || !user || !message) return false;
     timestamp = timestamp.replace(/\u202F|\s/g, ' ').trim();
 
-    // The key remains based on the original message unique identity
-    const key = `${timestamp}|${user}|${message}`;
-    
-    if (!seenKeys.has(key)) {
-      // It's a brand new message
-      seenKeys.add(key);
-      streamData.messages.push({ timestamp, user, isModerator, message, deletedState });
-      return true;
-    } else {
-      // Message exists, check if we need to update the deletedState
-      const existingMsg = streamData.messages.find(m => 
-        m.timestamp === timestamp && m.user === user && m.message === message
-      );
+    // Stable anchor that persists even if the message element text gets wiped/moderated
+    const anchor = `${user}|${timestamp}`;
 
-      // Only update and return true if the deletedState has actually changed (e.g. from null to "Hidden by X")
+    if (messageCache.has(anchor)) {
+      const existingIdx = messageCache.get(anchor);
+      const existingMsg = streamData.messages[existingIdx];
+
+      // Perfect match found; update its deletion state if it changed
       if (existingMsg && existingMsg.deletedState !== deletedState) {
         existingMsg.deletedState = deletedState;
-        return true; 
+        return true;
       }
+      return false;
     }
-    return false;
+
+    // Brand new message entry
+    streamData.messages.push({ timestamp, user, isModerator, message, deletedState });
+    const newIndex = streamData.messages.length - 1;
+
+    messageCache.set(anchor, newIndex);
+
+    // --- ULTRA-LEAN PERFORMANCE CAPPING ---
+    // Since YouTube holds ~50-70 nodes, capping at 100 keeps memory completely flat
+    if (messageCache.size > 100) {
+      const oldestKey = messageCache.keys().next().value;
+      messageCache.delete(oldestKey);
+    }
+
+    return true;
   }
 
-/**
-   * Processes an individual DOM node into the local data store.
-   */
+  /**
+     * Processes an individual DOM node into the local data store.
+     */
   function processNode(node) {
     const timestamp = node.querySelector('#timestamp')?.innerText.trim();
-    
+
     // Handle Regular Chat Messages
     if (node.nodeName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER') {
       const user = node.querySelector('#author-name')?.innerText.trim();
@@ -141,12 +161,12 @@
         }
       });
 
-      return saveMessage({ 
-        timestamp, 
-        user, 
-        isModerator, 
-        message: fullMessage.trim(), 
-        deletedState 
+      return saveMessage({
+        timestamp,
+        user,
+        isModerator,
+        message: fullMessage.trim(),
+        deletedState
       });
     }
 
@@ -184,13 +204,13 @@
       // 1. Handle brand new messages
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
         mutation.addedNodes.forEach(node => {
-          if (node.nodeName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER' || 
-              node.nodeName === 'YT-LIVE-CHAT-MODERATION-MESSAGE-RENDERER') {
+          if (node.nodeName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER' ||
+            node.nodeName === 'YT-LIVE-CHAT-MODERATION-MESSAGE-RENDERER') {
             newMessagesFound = processNode(node) || newMessagesFound;
           }
         });
       }
-      
+
       // 2. Handle updates to existing messages (Deletions/Timeouts)
       // Checks for text changes (characterData) or internal UI swaps (childList)
       if (mutation.type === 'characterData' || (mutation.type === 'childList' && mutation.addedNodes.length === 0)) {
@@ -220,7 +240,7 @@
     try {
       localStorage.setItem(dbKey, JSON.stringify(chatDB));
       console.log(`Database updated for ${streamId}. Total: ${streamData.messages.length}`);
-      
+
       // NEW: Update the pop-up counter if the window is open
       updateLiveCounter();
     } catch (e) {
@@ -262,10 +282,10 @@
     if (chatContainer) {
       scrapeExisting();
       // subtree: true is required to see changes inside the message renderer
-      observer.observe(chatContainer, { 
-        childList: true, 
-        subtree: true, 
-        characterData: true 
+      observer.observe(chatContainer, {
+        childList: true,
+        subtree: true,
+        characterData: true
       });
       console.log(`Scraper active: Capturing all moderation events for ${title}`);
     }
@@ -328,7 +348,7 @@
 
   // #endregion
 
-// #region --- SECURE UI CONTROLLER ---
+  // #region --- SECURE UI CONTROLLER ---
 
   function updateLiveCounter() {
     if (ytChatScraper && ytChatScraper.controlWindow && !ytChatScraper.controlWindow.closed) {
@@ -348,7 +368,7 @@
   function openController() {
     // Open a standalone window
     ytChatScraper.controlWindow = window.open("", "ytScraperControl", "width=420,height=750,menubar=no,status=no");
-    
+
     if (!ytChatScraper.controlWindow) {
       console.error("Pop-up blocked! Please enable pop-ups for YouTube.");
       return;
@@ -384,7 +404,7 @@
 
     const logs = listLogs();
     const dateVal = (streamData.streamDate instanceof Date && !isNaN(streamData.streamDate))
-      ? streamData.streamDate.toISOString().split('T')[0] 
+      ? streamData.streamDate.toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0];
 
     const htmlContent = `
@@ -459,12 +479,12 @@
       const logText = streamData.messages.map(messageToText).join('\n');
       const viewWin = window.open("", "_blank");
       viewWin.document.body.innerHTML = policy.createHTML(`<pre style="word-wrap: break-word; white-space: pre-wrap;">${logText}</pre>`);
-      
+
       setTimeout(() => viewWin.document.body.innerHTML = policy.createHTML(`<pre style="word-wrap: break-word; white-space: pre-wrap;">${logText}</pre>`), 1000);
     };
 
     doc.getElementById('btn-clear-vault').onclick = () => {
-      if(confirm("This will permanently delete ALL logs in localStorage. Proceed?")) {
+      if (confirm("This will permanently delete ALL logs in localStorage. Proceed?")) {
         clearVault();
         renderPopupContent();
       }
@@ -473,10 +493,10 @@
     doc.querySelectorAll('.vault-dl').forEach(el => {
       el.onclick = () => downloadLog(el.dataset.id);
     });
-    
+
     doc.querySelectorAll('.vault-del').forEach(el => {
       el.onclick = () => {
-        if(confirm("Delete this log?")) {
+        if (confirm("Delete this log?")) {
           clearVault(el.dataset.id);
           renderPopupContent();
         }

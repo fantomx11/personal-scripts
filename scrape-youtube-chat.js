@@ -2,8 +2,8 @@
  * YouTube Live Chat Scraper
  * A tool to observe, capture, and persist YouTube live chat messages to localStorage.
  * 
- * * @author Gemini
- * @version 1.1.0
+ * @author Gemini
+ * @version 1.1.1
  */
 (function () {
   // #region --- INITIALIZATION & STATE ---
@@ -25,13 +25,6 @@
   const channel = window.parent.document.querySelector("#owner #channel-name")?.innerText || "Unknown Channel";
   const scrapeDate = new Date();
 
-
-  /** * @typedef {Object} ChatMessage
-   * @property {string} timestamp - Human readable time (e.g., "1:20" or "4:30 PM")
-   * @property {string} user - Author name
-   * @property {string} message - Content of the message
-   */
-
   let streamData = JSON.parse(localStorage.getItem(dbKey) || '{}')[streamId] || {
     title,
     channel,
@@ -42,18 +35,20 @@
 
   const messageToText = m => `[${m.timestamp}] ${m.user}${m.isModerator ? ' (m)' : ''}: ${m.message}${m.deletedState ? ` [${m.deletedState}]` : ''}`;
 
-  /** * A Map tracking recent messages by a stable user+time anchor.
-   * Stores 'user|timestamp' -> index in streamData.messages
+  /** 
+   * A Map tracking recent messages by a stable user+time anchor.
+   * Maps 'user|timestamp' -> Set of unique message texts
    */
   const messageCache = new Map();
 
-  // Populate on initialization with a strict maximum of the last 100 entries
-  const recentMessagesCount = Math.min(streamData.messages.length, 100);
-  if (recentMessagesCount > 0) {
-    const recentMessages = streamData.messages.slice(-recentMessagesCount);
-    recentMessages.forEach((m, index) => {
+  // Hydrate cache securely on initialization using pre-existing data
+  if (streamData.messages && streamData.messages.length > 0) {
+    streamData.messages.forEach(m => {
       const anchor = `${m.user}|${m.timestamp}`;
-      messageCache.set(anchor, streamData.messages.length - recentMessagesCount + index);
+      if (!messageCache.has(anchor)) {
+        messageCache.set(anchor, new Set());
+      }
+      messageCache.get(anchor).add(m.message);
     });
   }
 
@@ -61,22 +56,12 @@
 
   // #region --- DATA PARSING UTILITIES ---
 
-  /**
-   * Extracts a date string (MMM DD, YYYY) from YouTube's description tooltip.
-   * @param {string} input - The raw text from the date tooltip.
-   * @returns {string|undefined}
-   */
   function extractDate(input) {
     const dateRegex = /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s\d{1,2},\s\d{4}/;
     const extractedDate = input.match(dateRegex);
     return extractedDate ? extractedDate[0] : undefined;
   }
 
-  /**
-   * Converts a YouTube chat timestamp into a sortable integer (seconds).
-   * @param {string} ts - The timestamp string from the chat UI.
-   * @returns {number} Seconds from start or start of day.
-   */
   function getSortableTime(ts) {
     if (ts.startsWith('-') || !ts.includes('M')) {
       const isNeg = ts.startsWith('-');
@@ -91,29 +76,37 @@
     if (meridiem.toUpperCase() === 'PM' && hrs !== 12) hrs += 12;
     if (meridiem.toUpperCase() === 'AM' && hrs === 12) hrs = 0;
     return (hrs * 3600) + (parseInt(mins, 10) * 60);
-  };
+  }
 
   // #endregion
 
   // #region --- SCRAPING ENGINE ---
 
-  /**
-   * Validates and saves a message object if it doesn't already exist.
-   * @param {ChatMessage} param0 - The message components.
-   * @returns {boolean} True if message was unique and added.
-   */
   function saveMessage({ timestamp, user, isModerator, message, deletedState }) {
     if (!timestamp || !user || !message) return false;
     timestamp = timestamp.replace(/\u202F|\s/g, ' ').trim();
+    message = message.trim();
 
-    // Stable anchor that persists even if the message element text gets wiped/moderated
     const anchor = `${user}|${timestamp}`;
 
-    if (messageCache.has(anchor)) {
-      const existingIdx = messageCache.get(anchor);
-      const existingMsg = streamData.messages[existingIdx];
+    if (!messageCache.has(anchor)) {
+      messageCache.set(anchor, new Set());
+    }
 
-      // Perfect match found; update its deletion state if it changed
+    const messageSet = messageCache.get(anchor);
+
+    // Strict value check against the unique text payload
+    if (messageSet.has(message)) {
+      // Lightning-fast reverse loop to find the exact target object reference regardless of index position
+      let existingMsg = null;
+      for (let i = streamData.messages.length - 1; i >= 0; i--) {
+        const m = streamData.messages[i];
+        if (m.user === user && m.timestamp === timestamp && m.message === message) {
+          existingMsg = m;
+          break;
+        }
+      }
+
       if (existingMsg && existingMsg.deletedState !== deletedState) {
         existingMsg.deletedState = deletedState;
         return true;
@@ -121,15 +114,12 @@
       return false;
     }
 
-    // Brand new message entry
+    // Brand new unique message entry
     streamData.messages.push({ timestamp, user, isModerator, message, deletedState });
-    const newIndex = streamData.messages.length - 1;
+    messageSet.add(message);
 
-    messageCache.set(anchor, newIndex);
-
-    // --- ULTRA-LEAN PERFORMANCE CAPPING ---
-    // Since YouTube holds ~50-70 nodes, capping at 100 keeps memory completely flat
-    if (messageCache.size > 100) {
+    // Performance protection cache-capping
+    if (messageCache.size > 200) {
       const oldestKey = messageCache.keys().next().value;
       messageCache.delete(oldestKey);
     }
@@ -137,13 +127,9 @@
     return true;
   }
 
-  /**
-     * Processes an individual DOM node into the local data store.
-     */
   function processNode(node) {
     const timestamp = node.querySelector('#timestamp')?.innerText.trim();
 
-    // Handle Regular Chat Messages
     if (node.nodeName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER') {
       const user = node.querySelector('#author-name')?.innerText.trim();
       const isModerator = node.querySelector('#author-name')?.classList.contains("moderator") || false;
@@ -170,24 +156,20 @@
       });
     }
 
-    // Handle System Moderation Messages (Timeouts/Bans shown in chat)
     if (node.nodeName === 'YT-LIVE-CHAT-MODERATION-MESSAGE-RENDERER') {
       const modMessage = node.querySelector('#message')?.innerText.trim();
       return saveMessage({
         timestamp,
-        user: "MODERATION", // Labeling these as system events
+        user: "MODERATION",
         isModerator: false,
         message: modMessage,
-        isSystemAction: true // Flag to distinguish from regular chat
+        deletedState: undefined
       });
     }
 
     return false;
   }
 
-  /**
-   * Scrapes all messages currently visible in the chat history.
-   */
   function scrapeExisting() {
     const nodes = document.querySelectorAll('yt-live-chat-text-message-renderer, yt-live-chat-moderation-message-renderer');
     let newMessagesFound = false;
@@ -195,13 +177,11 @@
       newMessagesFound = processNode(node) || newMessagesFound;
     });
     if (newMessagesFound) persistToStorage();
-  };
+  }
 
-  /** @type {MutationObserver} Watches for new nodes and internal text changes */
   const observer = new MutationObserver((mutations) => {
     let newMessagesFound = false;
     for (const mutation of mutations) {
-      // 1. Handle brand new messages
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
         mutation.addedNodes.forEach(node => {
           if (node.nodeName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER' ||
@@ -211,8 +191,6 @@
         });
       }
 
-      // 2. Handle updates to existing messages (Deletions/Timeouts)
-      // Checks for text changes (characterData) or internal UI swaps (childList)
       if (mutation.type === 'characterData' || (mutation.type === 'childList' && mutation.addedNodes.length === 0)) {
         const messageNode = mutation.target.parentElement?.closest('yt-live-chat-text-message-renderer');
         if (messageNode) {
@@ -227,11 +205,7 @@
 
   // #region --- PERSISTENCE & EXPORT ---
 
-  /**
-   * Syncs the in-memory chat log to the browser's localStorage.
-   */
   function persistToStorage() {
-    /** @type {Object} The internal database loaded from storage */
     const chatDB = JSON.parse(localStorage.getItem(dbKey) || '{}');
 
     streamData.messages.sort((a, b) => getSortableTime(a.timestamp) - getSortableTime(b.timestamp));
@@ -240,18 +214,12 @@
     try {
       localStorage.setItem(dbKey, JSON.stringify(chatDB));
       console.log(`Database updated for ${streamId}. Total: ${streamData.messages.length}`);
-
-      // NEW: Update the pop-up counter if the window is open
       updateLiveCounter();
     } catch (e) {
       console.error("Storage full!", e);
     }
-  };
+  }
 
-  /**
-   * Triggers a browser download of the chat log as a text file.
-   * @param {string} [id=streamId] - The ID of the stream to export.
-   */
   function downloadLog(id = streamId) {
     const db = JSON.parse(localStorage.getItem(dbKey) || '{}');
     const entry = db[id];
@@ -273,15 +241,11 @@
 
   // #region --- PUBLIC API & CONTROLS ---
 
-  /**
-   * Initializes the scraper by finding the chat container and starting the observer.
-   */
   function init() {
     observer.disconnect();
     const chatContainer = document.querySelector('#items.yt-live-chat-item-list-renderer');
     if (chatContainer) {
       scrapeExisting();
-      // subtree: true is required to see changes inside the message renderer
       observer.observe(chatContainer, {
         childList: true,
         subtree: true,
@@ -291,11 +255,6 @@
     }
   }
 
-
-  /**
-   * Returns a list of all streams currently saved in the local vault.
-   * @returns {Array}
-   */
   function listLogs() {
     const currentDB = JSON.parse(localStorage.getItem(dbKey) || '{}');
     return Object.keys(currentDB).map(id => ({
@@ -306,22 +265,18 @@
     }));
   }
 
-  /**
-   * Removes data from the vault.
-   * @param {string} [id] - Stream ID to clear. If blank, clears everything.
-   */
   function clearVault(id) {
     if (id === undefined) {
       localStorage.removeItem(dbKey);
       streamData.messages = [];
-      seenKeys.clear();
+      messageCache.clear(); // Fixed ReferenceError crash
     } else {
       const db = JSON.parse(localStorage.getItem(dbKey) || '{}');
       delete db[id];
       localStorage.setItem(dbKey, JSON.stringify(db));
       if (id === streamId) {
         streamData.messages = [];
-        seenKeys.clear();
+        messageCache.clear(); // Fixed ReferenceError crash
       }
     }
     console.log("Vault updated.");
@@ -359,14 +314,11 @@
     }
   }
 
-  /** * Create a Trusted Types policy to bypass "TrustedHTML" blocks 
-   */
   const policy = window.trustedTypes?.createPolicy('youtube-scraper-policy', {
     createHTML: (string) => string
   }) || { createHTML: (string) => string };
 
   function openController() {
-    // Open a standalone window
     ytChatScraper.controlWindow = window.open("", "ytScraperControl", "width=420,height=750,menubar=no,status=no");
 
     if (!ytChatScraper.controlWindow) {
@@ -374,7 +326,6 @@
       return;
     }
 
-    // Inject styles securely
     const style = ytChatScraper.controlWindow.document.createElement('style');
     style.textContent = `
       body { background: #121212; color: #e0e0e0; font-family: 'Segoe UI', Roboto, sans-serif; padding: 20px; line-height: 1.5; }
@@ -450,13 +401,10 @@
       <button class="btn-danger" id="btn-clear-vault">Wipe All Stored Data</button>
     `;
 
-    // Apply HTML via the Trusted Types policy
     ytChatScraper.controlWindow.document.body.innerHTML = policy.createHTML(htmlContent);
 
-    // --- BINDING EVENTS ---
     const doc = ytChatScraper.controlWindow.document;
 
-    // Reconnect Logic
     doc.getElementById('btn-reconnect').onclick = () => {
       const success = init();
       if (success) {
@@ -479,8 +427,6 @@
       const logText = streamData.messages.map(messageToText).join('\n');
       const viewWin = window.open("", "_blank");
       viewWin.document.body.innerHTML = policy.createHTML(`<pre style="word-wrap: break-word; white-space: pre-wrap;">${logText}</pre>`);
-
-      setTimeout(() => viewWin.document.body.innerHTML = policy.createHTML(`<pre style="word-wrap: break-word; white-space: pre-wrap;">${logText}</pre>`), 1000);
     };
 
     doc.getElementById('btn-clear-vault').onclick = () => {
@@ -504,10 +450,5 @@
     });
   }
 
-  // Start the controller
   openController();
-
-  setTimeout(openController, 1000);
-
-  // #endregion
 })();

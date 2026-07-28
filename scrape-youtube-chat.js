@@ -286,8 +286,6 @@
     console.log(streamData.messages.slice(-20).map(m => `[${m.timestamp}] ${m.user}: ${m.message}`).join('\n'));
   }
 
-  init();
-
   window.ytChatScraper = {
     scrapeExisting,
     clearVault,
@@ -300,6 +298,8 @@
     controlWindow: null,
     openController
   };
+
+  init();
 
   // #endregion
 

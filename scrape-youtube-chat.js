@@ -3,7 +3,7 @@
  * A tool to observe, capture, and persist YouTube live chat messages to localStorage.
  * 
  * @author Gemini
- * @version 1.1.1
+ * @version 1.1.2
  */
 (function () {
   // #region --- INITIALIZATION & STATE ---
@@ -21,7 +21,8 @@
   /** @type {string} Metadata pulled from the parent YouTube page */
   const title = window.parent.document.getElementById("title")?.innerText || "Untitled";
   const descElement = window.parent.document.querySelector("#description #tooltip");
-  const streamDate = descElement ? new Date(extractDate(descElement.innerText.trim())) : new Date();
+  const extractedDateStr = descElement ? extractDate(descElement.innerText.trim()) : null;
+  const streamDate = extractedDateStr ? new Date(extractedDateStr) : new Date();
   const channel = window.parent.document.querySelector("#owner #channel-name")?.innerText || "Unknown Channel";
   const scrapeDate = new Date();
 
@@ -57,12 +58,14 @@
   // #region --- DATA PARSING UTILITIES ---
 
   function extractDate(input) {
+    if (!input) return undefined;
     const dateRegex = /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s\d{1,2},\s\d{4}/;
     const extractedDate = input.match(dateRegex);
     return extractedDate ? extractedDate[0] : undefined;
   }
 
   function getSortableTime(ts) {
+    if (!ts) return 0;
     if (ts.startsWith('-') || !ts.includes('M')) {
       const isNeg = ts.startsWith('-');
       const parts = ts.replace('-', '').split(':').map(Number);
@@ -97,7 +100,7 @@
 
     // Strict value check against the unique text payload
     if (messageSet.has(message)) {
-      // Lightning-fast reverse loop to find the exact target object reference regardless of index position
+      // Fast reverse loop to update message state if deleted
       let existingMsg = null;
       for (let i = streamData.messages.length - 1; i >= 0; i--) {
         const m = streamData.messages[i];
@@ -118,8 +121,8 @@
     streamData.messages.push({ timestamp, user, isModerator, message, deletedState });
     messageSet.add(message);
 
-    // Performance protection cache-capping
-    if (messageCache.size > 200) {
+    // Cache limit set higher to support rapid chat streams without premature pruning
+    if (messageCache.size > 2000) {
       const oldestKey = messageCache.keys().next().value;
       messageCache.delete(oldestKey);
     }
@@ -135,6 +138,8 @@
       const isModerator = node.querySelector('#author-name')?.classList.contains("moderator") || false;
       const messageElement = node.querySelector('#message');
       const deletedState = node.querySelector('#deleted-state')?.innerText.trim();
+
+      if (!messageElement) return false;
 
       let fullMessage = "";
       messageElement.childNodes.forEach(child => {
@@ -213,7 +218,6 @@
 
     try {
       localStorage.setItem(dbKey, JSON.stringify(chatDB));
-      console.log(`Database updated for ${streamId}. Total: ${streamData.messages.length}`);
       updateLiveCounter();
     } catch (e) {
       console.error("Storage full!", e);
@@ -225,14 +229,15 @@
     const entry = db[id];
     if (!entry) return console.error("No data for:", id);
 
-    const dateFormatted = new Intl.DateTimeFormat('en-CA').format(new Date(entry.streamDate));
-    const title = `${entry.channel} - ${dateFormatted} - ${entry.title}`;
+    const validDate = entry.streamDate ? new Date(entry.streamDate) : new Date();
+    const dateFormatted = new Intl.DateTimeFormat('en-CA').format(isNaN(validDate) ? new Date() : validDate);
+    const logTitle = `${entry.channel} - ${dateFormatted} - ${entry.title}`;
     const text = entry.messages.map(messageToText).join('\n');
 
     const blob = new Blob([text], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    const safeTitle = title.replace(/[^\w\s-]/gi, '').substring(0, 50);
+    const safeTitle = logTitle.replace(/[^\w\s-]/gi, '').substring(0, 50);
     a.download = `chat_${safeTitle || id}.txt`;
     a.click();
   }
@@ -252,7 +257,10 @@
         characterData: true
       });
       console.log(`Scraper active: Capturing all moderation events for ${title}`);
+      return true;
     }
+    console.warn("Chat container not found. Ensure the live chat frame is loaded.");
+    return false;
   }
 
   function listLogs() {
@@ -269,14 +277,14 @@
     if (id === undefined) {
       localStorage.removeItem(dbKey);
       streamData.messages = [];
-      messageCache.clear(); // Fixed ReferenceError crash
+      messageCache.clear();
     } else {
       const db = JSON.parse(localStorage.getItem(dbKey) || '{}');
       delete db[id];
       localStorage.setItem(dbKey, JSON.stringify(db));
       if (id === streamId) {
         streamData.messages = [];
-        messageCache.clear(); // Fixed ReferenceError crash
+        messageCache.clear();
       }
     }
     console.log("Vault updated.");

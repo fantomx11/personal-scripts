@@ -983,6 +983,7 @@
       // Render Folders
       this.store.state.folders
         .filter((f) => f.parentId === this.store.state.currentFolderId)
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }))
         .forEach((f) => navList.appendChild(this.createFolderRow(f, parentId)));
 
       // Render Chats

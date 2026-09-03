@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Gemini Folder Explorer
+// @name         Gemini Folder Explorer (OOP)
 // @namespace    https://gemini.google.com/
-// @version      1.0
-// @description  Windows Explorer directory tree and client-side folder organization for Gemini with native Material styling.
+// @version      0.5
+// @description  Windows Explorer directory tree and client-side folder organization for Gemini with native Material styling, safe DOM rendering, and Material action modals.
 // @match        https://gemini.google.com/*
 // @grant        none
 // ==/UserScript==
@@ -11,7 +11,39 @@
   'use strict';
 
   // ==========================================
-  // 1. MATERIAL OUTLINE ICONS (Google Lumi Style)
+  // 1. HELPERS & UTILITIES
+  // ==========================================
+  class Utils {
+    static escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    static sanitizeTitle(rawTitle, fallbackId = '') {
+      if (!rawTitle) return fallbackId ? `Chat (${fallbackId.slice(0, 6)})` : 'Conversation';
+      let title = rawTitle.trim();
+
+      if (title.includes('\n')) {
+        title = title.split('\n')[0].trim();
+      }
+
+      title = title.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+
+      if (title.length > 80) {
+        title = title.slice(0, 77).trim() + '...';
+      }
+
+      return title || (fallbackId ? `Chat (${fallbackId.slice(0, 6)})` : 'Conversation');
+    }
+  }
+
+  // ==========================================
+  // 2. MATERIAL OUTLINE ICONS (Google Lumi Style)
   // ==========================================
   class Icons {
     static svg(pathContent, size = 20, viewBox = '0 0 24 24') {
@@ -44,6 +76,10 @@
       return this.svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>', 15);
     }
 
+    static get PASTE() {
+      return this.svg('<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>', 15);
+    }
+
     static get EDIT() {
       return this.svg('<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>', 13);
     }
@@ -59,10 +95,14 @@
     static get PIN() {
       return this.svg('<line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14l-2-7V4h1V2H6v2h1v6l-2 7z"></path>', 14);
     }
+
+    static get LAUNCH() {
+      return this.svg('<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>', 14);
+    }
   }
 
   // ==========================================
-  // 2. SCHEMA MIGRATOR & UPGRADERS
+  // 3. SCHEMA MIGRATOR & UPGRADERS
   // ==========================================
   class SchemaMigrator {
     static CURRENT_SCHEMA_VERSION = 1;
@@ -88,7 +128,7 @@
   }
 
   // ==========================================
-  // 3. STATE & PERSISTENCE STORE
+  // 4. STATE & PERSISTENCE STORE
   // ==========================================
   class ExplorerStore {
     constructor(storageKey = 'gemini_explorer_state') {
@@ -111,6 +151,14 @@
           let parsed = JSON.parse(raw);
           parsed = SchemaMigrator.migrate(parsed);
           Object.assign(this.state, parsed);
+
+          if (this.state.chats && typeof this.state.chats === 'object') {
+            Object.values(this.state.chats).forEach((chat) => {
+              if (chat && chat.title) {
+                chat.title = Utils.sanitizeTitle(chat.title, chat.id);
+              }
+            });
+          }
         }
       } catch (e) {
         console.error('[Gemini Explorer] Store load error:', e);
@@ -180,13 +228,15 @@
 
     upsertChat(id, title, isPinned = false) {
       let changed = false;
+      const cleanTitle = Utils.sanitizeTitle(title, id);
+
       if (!this.state.chats[id]) {
-        this.state.chats[id] = { id, title, isPinned, updatedAt: Date.now() };
+        this.state.chats[id] = { id, title: cleanTitle, isPinned, updatedAt: Date.now() };
         changed = true;
       } else {
         const existing = this.state.chats[id];
-        if (existing.title !== title || existing.isPinned !== isPinned) {
-          existing.title = title;
+        if (existing.title !== cleanTitle || existing.isPinned !== isPinned) {
+          existing.title = cleanTitle;
           existing.isPinned = isPinned;
           changed = true;
         }
@@ -236,36 +286,45 @@
       URL.revokeObjectURL(url);
     }
 
+    importFromJSONString(rawJson, onComplete) {
+      try {
+        let parsed = JSON.parse(rawJson);
+        parsed = SchemaMigrator.migrate(parsed);
+
+        if (!parsed.folders || !parsed.assignments) {
+          throw new Error('Missing folders or assignments payload.');
+        }
+
+        this.state.folders = parsed.folders;
+        this.state.assignments = Object.assign(this.state.assignments, parsed.assignments);
+        if (parsed.chats) {
+          Object.values(parsed.chats).forEach((c) => {
+            if (c && c.title) c.title = Utils.sanitizeTitle(c.title, c.id);
+          });
+          this.state.chats = Object.assign(this.state.chats, parsed.chats);
+        }
+        this.state.currentFolderId = null;
+        this.save();
+        if (onComplete) onComplete(true);
+        return true;
+      } catch (err) {
+        alert('Import failed: ' + err.message);
+        if (onComplete) onComplete(false);
+        return false;
+      }
+    }
+
     importJSON(file, onComplete) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        try {
-          let parsed = JSON.parse(e.target.result);
-          parsed = SchemaMigrator.migrate(parsed);
-
-          if (!parsed.folders || !parsed.assignments) {
-            throw new Error('Missing folders or assignments payload.');
-          }
-
-          this.state.folders = parsed.folders;
-          this.state.assignments = Object.assign(this.state.assignments, parsed.assignments);
-          if (parsed.chats) {
-            this.state.chats = Object.assign(this.state.chats, parsed.chats);
-          }
-          this.state.currentFolderId = null;
-          this.save();
-          if (onComplete) onComplete(true);
-        } catch (err) {
-          alert('Import failed: ' + err.message);
-          if (onComplete) onComplete(false);
-        }
+        this.importFromJSONString(e.target.result, onComplete);
       };
       reader.readAsText(file);
     }
   }
 
   // ==========================================
-  // 4. DRAG & DROP CONTROLLER
+  // 5. DRAG & DROP CONTROLLER
   // ==========================================
   class DragDropService {
     static setGhost(e, label, svgIcon) {
@@ -279,7 +338,7 @@
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         z-index: 100000; pointer-events: none;
       `;
-      ghost.innerHTML = `<span style="display:flex;align-items:center;opacity:0.85;">${svgIcon}</span><span style="overflow:hidden;text-overflow:ellipsis;">${label}</span>`;
+      ghost.innerHTML = `<span style="display:flex;align-items:center;opacity:0.85;">${svgIcon}</span><span>${Utils.escapeHtml(label)}</span>`;
       document.body.appendChild(ghost);
       e.dataTransfer.setDragImage(ghost, 20, 16);
       setTimeout(() => ghost.remove(), 0);
@@ -309,7 +368,7 @@
   }
 
   // ==========================================
-  // 5. DOM HARVESTER
+  // 6. DOM HARVESTER
   // ==========================================
   class Harvester {
     constructor(store, onUpdate) {
@@ -341,8 +400,18 @@
         const id = Harvester.extractChatId(a.getAttribute('href'));
         if (!id) return;
 
-        const titleEl = a.querySelector('.title-text');
-        const title = titleEl ? titleEl.textContent.trim() : a.getAttribute('aria-label') || '';
+        const titleEl = a.querySelector(
+          '.conversation-title, .conversation-title-text, [data-test-id="conversation-title"], .title-text, .title, .mat-mdc-list-item-unscoped-content span, .mdc-list-item__primary-text'
+        );
+
+        let rawTitle = '';
+        if (titleEl) {
+          rawTitle = titleEl.innerText || titleEl.textContent || '';
+        } else {
+          rawTitle = a.getAttribute('aria-label') || '';
+        }
+
+        const title = Utils.sanitizeTitle(rawTitle, id);
         const isPinned = !!a.querySelector('mat-icon[fonticon="push_pin"], mat-icon[data-mat-icon-name="push_pin"]');
 
         if (title && title.toLowerCase() !== 'new chat') {
@@ -351,10 +420,15 @@
       });
 
       const currentId = Harvester.extractChatId(window.location.pathname);
-      if (currentId && !this.store.state.chats[currentId]) {
-        const titleText = document.querySelector('title')?.textContent.replace(/ - Gemini$/, '').trim();
-        const fallbackTitle = titleText && titleText !== 'Gemini' ? titleText : `Chat (${currentId.slice(0, 6)})`;
-        if (this.store.upsertChat(currentId, fallbackTitle, false)) changed = true;
+      if (currentId) {
+        const existing = this.store.state.chats[currentId];
+        if (!existing || existing.title.includes('\n') || existing.title.length > 80) {
+          const docTitle = document.querySelector('title')?.textContent.replace(/ - Gemini$/, '').trim();
+          if (docTitle && docTitle.toLowerCase() !== 'gemini') {
+            const cleanFallback = Utils.sanitizeTitle(docTitle, currentId);
+            if (this.store.upsertChat(currentId, cleanFallback, false)) changed = true;
+          }
+        }
       }
 
       if (changed) this.onUpdate();
@@ -403,7 +477,7 @@
   }
 
   // ==========================================
-  // 6. UI RENDERER
+  // 7. UI RENDERER
   // ==========================================
   class Renderer {
     constructor(store, harvester, onUpdate) {
@@ -428,7 +502,6 @@
           width: 100% !important;
           box-sizing: border-box !important;
         }
-        /* Match Native Row Height, Padding, and Shape */
         #g-explorer-root gem-nav-list-item a.mat-mdc-list-item {
           position: relative !important;
           width: 100% !important;
@@ -448,6 +521,7 @@
           height: 24px !important;
           margin-right: 12px !important;
           opacity: 0.85;
+          flex-shrink: 0;
         }
         #g-explorer-root .title-text {
           font-size: 14px !important;
@@ -455,8 +529,8 @@
           white-space: nowrap !important;
           overflow: hidden !important;
           text-overflow: ellipsis !important;
+          display: block !important;
         }
-        /* Actions Hover State */
         #g-explorer-root .hovered-trailing-content {
           position: absolute !important;
           right: 6px !important;
@@ -565,7 +639,6 @@
       if (!nativeItem) return false;
 
       const nativeRow = nativeItem.closest('gem-nav-list-item');
-      // The trigger directive lives on the gem-icon-button wrapper
       const triggerWrapper = nativeRow?.querySelector('[data-test-id="actions-menu-button"]');
       const nativeBtn = triggerWrapper?.querySelector('button');
       const convList = document.querySelector('conversations-list[data-test-id="all-conversations"]');
@@ -574,11 +647,9 @@
       this.harvester.pendingActionChatId = chatId;
       const rect = triggerButton.getBoundingClientRect();
 
-      // Preserve native inline styles
       const prevListCss = convList.style.cssText;
       const prevTriggerCss = triggerWrapper.style.cssText;
 
-      // Collapse native list into zero-flow viewport anchor
       convList.style.cssText = `
         display: block !important;
         position: fixed !important;
@@ -592,7 +663,6 @@
         z-index: -9999 !important;
       `;
 
-      // Position the actual Material menu trigger directive directly over our button
       triggerWrapper.style.cssText = `
         position: fixed !important;
         top: ${rect.top}px !important;
@@ -632,6 +702,220 @@
       return true;
     }
 
+    openChatOptionsModal(chat) {
+      if (document.getElementById('g-chat-options-modal')) return;
+
+      const overlay = document.createElement('div');
+      overlay.id = 'g-chat-options-modal';
+      overlay.style.cssText = `
+        position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65);
+        backdrop-filter: blur(2px); z-index: 1000000;
+        display: flex; align-items: center; justify-content: center;
+        padding: 16px; box-sizing: border-box; font-family: inherit;
+      `;
+
+      const modal = document.createElement('div');
+      modal.style.cssText = `
+        background: #1e1f20; color: #e3e3e3; border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 16px; width: 440px; max-width: 100%; max-height: 90vh;
+        display: flex; flex-direction: column; gap: 14px; padding: 20px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); box-sizing: border-box;
+      `;
+
+      const safeTitle = Utils.escapeHtml(chat.title);
+      const isAssigned = !!this.store.state.assignments[chat.id];
+
+      modal.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="font-size: 15px; font-weight: 600;">Manage Conversation</div>
+          <button id="g-chat-modal-close" style="background: transparent; border: none; color: inherit; cursor: pointer; opacity: 0.6; display: flex; align-items: center; padding: 4px;">${Icons.DELETE}</button>
+        </div>
+        
+        <div style="font-size: 12px; opacity: 0.65; line-height: 1.4;">
+          This conversation is not actively rendered in Gemini's current sidebar view. You can open it, adjust its local layout settings, or remove it.
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label style="font-size: 11px; font-weight: 500; opacity: 0.75;">Local Title</label>
+          <div style="display: flex; gap: 6px;">
+            <input id="g-chat-rename-input" type="text" value="${safeTitle}" style="flex: 1; height: 32px; background: #131314; color: #e3e3e3; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; padding: 0 10px; font-size: 13px; outline: none;" />
+            <button id="g-chat-rename-btn" style="background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; padding: 0 12px; color: inherit; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+              ${Icons.EDIT}<span>Save</span>
+            </button>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 12px;">
+          <button id="g-chat-open-btn" style="width: 100%; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 8px 12px; color: inherit; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+            ${Icons.LAUNCH}<span>Try Opening in Gemini</span>
+          </button>
+
+          ${isAssigned ? `
+            <button id="g-chat-unassign-btn" style="width: 100%; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 8px 12px; color: inherit; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+              ${Icons.FOLDER_UP}<span>Move to Root Directory</span>
+            </button>
+          ` : ''}
+
+          <button id="g-chat-purge-btn" style="width: 100%; background: rgba(235, 87, 87, 0.1); border: 1px solid rgba(235, 87, 87, 0.3); border-radius: 8px; padding: 8px 12px; color: #ff8e8e; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+            ${Icons.DELETE}<span>Remove from Folder Explorer</span>
+          </button>
+        </div>
+      `;
+
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+
+      const close = () => {
+        document.removeEventListener('keydown', onKeyDown);
+        overlay.remove();
+      };
+
+      const onKeyDown = (e) => {
+        if (e.key === 'Escape') close();
+      };
+      document.addEventListener('keydown', onKeyDown);
+
+      overlay.onclick = (e) => {
+        if (e.target === overlay) close();
+      };
+      modal.querySelector('#g-chat-modal-close').onclick = close;
+
+      const renameInput = modal.querySelector('#g-chat-rename-input');
+      const saveTitle = () => {
+        const val = renameInput.value.trim();
+        if (val && val !== chat.title) {
+          this.store.upsertChat(chat.id, val, chat.isPinned);
+          this.onUpdate();
+        }
+        close();
+      };
+
+      modal.querySelector('#g-chat-rename-btn').onclick = saveTitle;
+      renameInput.onkeydown = (e) => {
+        if (e.key === 'Enter') saveTitle();
+      };
+
+      modal.querySelector('#g-chat-open-btn').onclick = () => {
+        close();
+        window.location.href = `/app/${chat.id}`;
+      };
+
+      const unassignBtn = modal.querySelector('#g-chat-unassign-btn');
+      if (unassignBtn) {
+        unassignBtn.onclick = () => {
+          this.store.assignChat(chat.id, null);
+          close();
+          this.onUpdate();
+        };
+      }
+
+      modal.querySelector('#g-chat-purge-btn').onclick = () => {
+        this.store.purgeChat(chat.id);
+        close();
+        this.onUpdate();
+      };
+    }
+
+    openPasteModal() {
+      if (document.getElementById('g-paste-modal')) return;
+
+      const overlay = document.createElement('div');
+      overlay.id = 'g-paste-modal';
+      overlay.style.cssText = `
+        position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65);
+        backdrop-filter: blur(2px); z-index: 1000000;
+        display: flex; align-items: center; justify-content: center;
+        padding: 16px; box-sizing: border-box; font-family: inherit;
+      `;
+
+      const modal = document.createElement('div');
+      modal.style.cssText = `
+        background: #1e1f20; color: #e3e3e3; border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 16px; width: 460px; max-width: 100%; max-height: 90vh;
+        display: flex; flex-direction: column; gap: 12px; padding: 20px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); box-sizing: border-box;
+      `;
+
+      modal.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="font-size: 15px; font-weight: 600;">Import Configuration (Paste)</div>
+          <button id="g-modal-close" style="background: transparent; border: none; color: inherit; cursor: pointer; opacity: 0.6; display: flex; align-items: center; padding: 4px;">${Icons.DELETE}</button>
+        </div>
+        <div style="font-size: 12px; opacity: 0.7;">Paste your exported JSON data directly below or read it from the clipboard:</div>
+        <textarea id="g-modal-textarea" placeholder='{"schemaVersion": 1, "folders": [...], ...}' style="width: 100%; height: 160px; box-sizing: border-box; background: #131314; color: #e3e3e3; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; padding: 10px; font-family: monospace; font-size: 11px; resize: vertical; outline: none;"></textarea>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px;">
+          <button id="g-modal-paste-clip" style="background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 16px; padding: 6px 12px; color: inherit; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+            ${Icons.PASTE}<span>Read Clipboard</span>
+          </button>
+          <div style="display: flex; gap: 8px;">
+            <button id="g-modal-cancel" style="background: transparent; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 16px; padding: 6px 14px; color: inherit; font-size: 12px; cursor: pointer;">Cancel</button>
+            <button id="g-modal-import" style="background: #a8c7fa; color: #040e1b; font-weight: 600; border: none; border-radius: 16px; padding: 6px 16px; font-size: 12px; cursor: pointer;">Import</button>
+          </div>
+        </div>
+      `;
+
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+
+      const textarea = modal.querySelector('#g-modal-textarea');
+      const close = () => {
+        document.removeEventListener('keydown', onKeyDown);
+        overlay.remove();
+      };
+
+      const onKeyDown = (e) => {
+        if (e.key === 'Escape') close();
+      };
+      document.addEventListener('keydown', onKeyDown);
+
+      overlay.onclick = (e) => {
+        if (e.target === overlay) close();
+      };
+      modal.querySelector('#g-modal-close').onclick = close;
+      modal.querySelector('#g-modal-cancel').onclick = close;
+
+      const clipBtn = modal.querySelector('#g-modal-paste-clip');
+      clipBtn.onclick = async () => {
+        try {
+          if (navigator.clipboard && navigator.clipboard.readText) {
+            const text = await navigator.clipboard.readText();
+            if (text) {
+              textarea.value = text;
+              textarea.focus();
+            }
+          } else {
+            alert('Clipboard API is not accessible in this context. Please paste manually into the field.');
+          }
+        } catch (err) {
+          alert('Unable to read clipboard: ' + err.message + '\nPlease paste manually.');
+        }
+      };
+
+      modal.querySelector('#g-modal-import').onclick = () => {
+        const val = textarea.value.trim();
+        if (!val) {
+          alert('Please paste JSON data first.');
+          return;
+        }
+        this.store.importFromJSONString(val, (success) => {
+          if (success) {
+            close();
+            this.onUpdate();
+          }
+        });
+      };
+
+      textarea.focus();
+
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then((clipText) => {
+          if (clipText && clipText.trim().startsWith('{')) {
+            textarea.value = clipText;
+          }
+        }).catch(() => {});
+      }
+    }
+
     createParentDirectoryRow(parentFolder) {
       const item = document.createElement('gem-nav-list-item');
       item.className = 'has-hovered-trailing-content ng-star-inserted';
@@ -645,7 +929,7 @@
           </div>
           <span class="mdc-list-item__content">
             <span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text">
-              <span dir="auto" class="title-text gds-body-s" style="font-style: italic;">.. [Up to ${pName}]</span>
+              <span dir="auto" class="title-text gds-body-s" style="font-style: italic;">.. [Up to ${Utils.escapeHtml(pName)}]</span>
             </span>
           </span>
           <div matlistitemmeta="" class="mat-mdc-list-item-meta mdc-list-item__end trailing-content">
@@ -686,7 +970,7 @@
           </div>
           <span class="mdc-list-item__content">
             <span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text">
-              <span dir="auto" class="title-text gds-body-s">${folder.name}</span>
+              <span dir="auto" class="title-text gds-body-s">${Utils.escapeHtml(folder.name)}</span>
             </span>
           </span>
           <div matlistitemmeta="" class="mat-mdc-list-item-meta mdc-list-item__end trailing-content">
@@ -751,16 +1035,17 @@
       item.className = 'has-hovered-trailing-content ng-star-inserted';
       const isActive = window.location.pathname.includes(chat.id);
       const canMoveUp = this.store.state.currentFolderId !== null;
+      const safeTitle = Utils.escapeHtml(chat.title);
 
       item.innerHTML = `
         <a mat-list-item="" theme="lm" draggable="true" 
            class="mat-mdc-list-item mdc-list-item mat-mdc-tooltip-trigger gem-nav-list-item gmat-override mat-mdc-list-item-interactive mdc-list-item--with-leading-icon mdc-list-item--with-trailing-meta mat-mdc-list-item-both-leading-and-trailing lm-enabled mat-mdc-list-item-single-line mdc-list-item--with-one-line ng-star-inserted ${isActive ? 'is-active mdc-list-item--activated' : ''}" 
-           href="/app/${chat.id}" aria-label="${chat.title}" tabindex="0">
+           href="/app/${chat.id}" aria-label="${safeTitle}" tabindex="0">
           <div matlistitemicon="" class="mat-mdc-list-item-icon leading-icon-container removed mdc-list-item__start"></div>
           <span class="mdc-list-item__content">
             <span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text">
               <span class="label-and-badge menu-entry-with-badge ng-star-inserted">
-                <span dir="auto" class="title-text ${isActive ? 'gds-emphasized-body-s' : 'gds-body-s'}">${chat.title}</span>
+                <span dir="auto" class="title-text ${isActive ? 'gds-emphasized-body-s' : 'gds-body-s'}">${safeTitle}</span>
               </span>
             </span>
           </span>
@@ -811,13 +1096,7 @@
         const opened = this.openNativeMenu(chat.id, optBtn);
         if (opened) return;
 
-        const choice = prompt(`Conversation: "${chat.title}"\n1: Move to Root\n2: Rename Local Title\n3: Remove from Layout\n(Choose 1, 2, or 3):`);
-        if (choice === '1') this.store.assignChat(chat.id, null);
-        else if (choice === '2') {
-          const t = prompt('New title:', chat.title);
-          if (t) this.store.upsertChat(chat.id, t.trim(), chat.isPinned);
-        } else if (choice === '3') this.store.purgeChat(chat.id);
-        this.onUpdate();
+        this.openChatOptionsModal(chat);
       };
 
       return this.applyAngularAttrs(item);
@@ -920,7 +1199,7 @@
 
       const impBtn = document.createElement('button');
       impBtn.innerHTML = Icons.IMPORT;
-      impBtn.title = 'Import configuration JSON';
+      impBtn.title = 'Import configuration file';
       impBtn.style.cssText = `
         display: inline-flex; align-items: center; justify-content: center;
         background: transparent; border: 1px solid rgba(128,128,128,0.25);
@@ -936,8 +1215,19 @@
         fileInput.click();
       };
 
+      const pasteBtn = document.createElement('button');
+      pasteBtn.innerHTML = Icons.PASTE;
+      pasteBtn.title = 'Paste import / Clipboard JSON';
+      pasteBtn.style.cssText = `
+        display: inline-flex; align-items: center; justify-content: center;
+        background: transparent; border: 1px solid rgba(128,128,128,0.25);
+        border-radius: 50%; width: 28px; height: 28px; cursor: pointer; color: inherit; opacity: 0.8;
+      `;
+      pasteBtn.onclick = () => this.openPasteModal();
+
       group.appendChild(expBtn);
       group.appendChild(impBtn);
+      group.appendChild(pasteBtn);
       actions.appendChild(newBtn);
       actions.appendChild(group);
       return actions;
@@ -980,13 +1270,10 @@
         navList.appendChild(this.createParentDirectoryRow(parentFolder));
       }
 
-      // Render Folders
       this.store.state.folders
         .filter((f) => f.parentId === this.store.state.currentFolderId)
-        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }))
         .forEach((f) => navList.appendChild(this.createFolderRow(f, parentId)));
 
-      // Render Chats
       const validFolderIds = new Set(this.store.state.folders.map((f) => f.id));
       const targetChats = Object.values(this.store.state.chats).filter((chat) => {
         const assigned = this.store.state.assignments[chat.id];
@@ -1007,7 +1294,7 @@
   }
 
   // ==========================================
-  // 7. APPLICATION COORDINATOR
+  // 8. APPLICATION COORDINATOR
   // ==========================================
   class GeminiExplorerApp {
     constructor() {
@@ -1021,7 +1308,7 @@
       if (window.__GEMINI_EXPLORER_LOOP__) clearInterval(window.__GEMINI_EXPLORER_LOOP__);
       this.loop();
       window.__GEMINI_EXPLORER_LOOP__ = setInterval(() => this.loop(), 800);
-      console.log('[Gemini Explorer v10.1] Native Material UI loaded.');
+      console.log('[Gemini Explorer v10.4] Native Material UI loaded.');
     }
 
     requestRender() {

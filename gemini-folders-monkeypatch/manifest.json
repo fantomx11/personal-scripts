@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Folder Explorer",
+  "version": "1.0",
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["gemini-folders.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

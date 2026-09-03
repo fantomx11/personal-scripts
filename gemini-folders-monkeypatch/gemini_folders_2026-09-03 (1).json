@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "exportedAt": "2026-09-03T21:05:01.764Z",
+  "folders": [
+    {
+      "id": "f_1788466682483_d35i",
+      "name": "Programming",
+      "parentId": null
+    },
+    {
+      "id": "f_1788466689898_18bv",
+      "name": "Philosophy",
+      "parentId": null
+    }
+  ],
+  "assignments": {
+    "1537bda1d6edbe86": "f_1788466682483_d35i",
+    "b198422d0a5b27c1": "f_1788466689898_18bv",
+    "188e5749da61ae13": "f_1788466682483_d35i"
+  },
+  "chats": {
+    "b198422d0a5b27c1": {
+      "id": "b198422d0a5b27c1",
+      "title": "Philosophical Debate on Divine Foreknowledge",
+      "isPinned": false,
+      "updatedAt": 1788466674490
+    },
+    "1537bda1d6edbe86": {
+      "id": "1537bda1d6edbe86",
+      "title": "Gemini Folder Monkeypatch",
+      "isPinned": false,
+      "updatedAt": 1788466674490
+    },
+    "32b52d105b2e152a": {
+      "id": "32b52d105b2e152a",
+      "title": "Fixing GitHub Import Error 13",
+      "isPinned": false,
+      "updatedAt": 1788466732100
+    },
+    "188e5749da61ae13": {
+      "id": "188e5749da61ae13",
+      "title": "Analyzing Arguments and Doxastic Involuntarism",
+      "isPinned": false,
+      "updatedAt": 1788468123743
+    }
+  }
+}

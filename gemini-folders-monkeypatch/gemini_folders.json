@@ -10,20 +10,27 @@
       "id": "f_1788466689898_18bv",
       "name": "Philosophy",
       "parentId": null
+    },
+    {
+      "id": "f_1788532776004_0885",
+      "name": "Music",
+      "parentId": null
     }
   ],
   "assignments": {
-    "1537bda1d6edbe86": "f_1788466682483_d35i",
     "b198422d0a5b27c1": "f_1788466689898_18bv",
     "188e5749da61ae13": "f_1788466689898_18bv",
-    "27c6598340a1cbc6": "f_1788466682483_d35i",
     "c40abb46f1ae8b92": "f_1788466689898_18bv",
-    "519338de28e81c6d": "f_1788466682483_d35i"
+    "519338de28e81c6d": "f_1788466682483_d35i",
+    "cc16fe846d35f52f": "f_1788532776004_0885",
+    "8418b59762f87e78": "f_1788466682483_d35i",
+    "a42aaa1e55629d58": "f_1788466682483_d35i",
+    "c2a58dfc432fec8b": "f_1788466682483_d35i"
   },
   "chats": {
-    "1537bda1d6edbe86": {
-      "id": "1537bda1d6edbe86",
-      "title": "Gemini Folder Monkeypatch",
+    "b198422d0a5b27c1": {
+      "id": "b198422d0a5b27c1",
+      "title": "Philosophical Debate on Divine Foreknowledge",
       "isPinned": false,
       "updatedAt": 1788466674490
     },
@@ -32,24 +39,6 @@
       "title": "Analyzing Arguments and Doxastic Involuntarism",
       "isPinned": false,
       "updatedAt": 1788468123743
-    },
-    "b198422d0a5b27c1": {
-      "id": "b198422d0a5b27c1",
-      "title": "Philosophical Debate on Divine Foreknowledge",
-      "isPinned": false,
-      "updatedAt": 1788466674490
-    },
-    "27c6598340a1cbc6": {
-      "id": "27c6598340a1cbc6",
-      "title": "I want to add a copy/paste style import too",
-      "isPinned": false,
-      "updatedAt": 1788476069251
-    },
-    "c40abb46f1ae8b92": {
-      "id": "c40abb46f1ae8b92",
-      "title": "Counterfactual Dependence Versus Causal Control",
-      "isPinned": false,
-      "updatedAt": 1788479856580
     },
     "519338de28e81c6d": {
       "id": "519338de28e81c6d",
@@ -63,11 +52,29 @@
       "isPinned": false,
       "updatedAt": 1788522928442
     },
-    "73a889dad6466800": {
-      "id": "73a889dad6466800",
-      "title": "Showing Folder Structure in Paste Modal",
+    "c40abb46f1ae8b92": {
+      "id": "c40abb46f1ae8b92",
+      "title": "Counterfactual Dependence Versus Causal Control",
       "isPinned": false,
-      "updatedAt": 1788523132930
+      "updatedAt": 1788479856580
+    },
+    "c2a58dfc432fec8b": {
+      "id": "c2a58dfc432fec8b",
+      "title": "Gemini Userscript Gist Sync",
+      "isPinned": false,
+      "updatedAt": 1788533178435
+    },
+    "a42aaa1e55629d58": {
+      "id": "a42aaa1e55629d58",
+      "title": "Adding Interior Window Consistency Check",
+      "isPinned": false,
+      "updatedAt": 1788537096789
+    },
+    "8418b59762f87e78": {
+      "id": "8418b59762f87e78",
+      "title": "Xactimate ESX Estimate Generator Logic",
+      "isPinned": false,
+      "updatedAt": 1788543269529
     }
   }
 }

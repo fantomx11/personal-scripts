@@ -48,7 +48,7 @@
   class Icons {
     static svg(pathContent, size = 20, viewBox = '0 0 24 24') {
       return `
-        <svg width="${size}" height="${size}" viewBox="${viewBox}" fill="none" 
+        <svg width="${size}" height="${size}" viewBox="${viewBox}" fill="none"
              stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
              style="display: block; flex-shrink: 0;">
           ${pathContent}
@@ -595,6 +595,20 @@
       return attrs;
     }
 
+    getFolderTreeText(parentId = null, depth = 0) {
+      const folders = this.store.state.folders.filter((f) => f.parentId === parentId);
+      if (!folders.length && depth === 0) return '(No folders created yet)';
+
+      let result = '';
+      const indent = '  '.repeat(depth);
+      for (const f of folders) {
+        const chatCount = Object.values(this.store.state.assignments).filter((id) => id === f.id).length;
+        result += `${indent}📁 ${Utils.escapeHtml(f.name)} (${chatCount} chats)\n`;
+        result += this.getFolderTreeText(f.id, depth + 1);
+      }
+      return result;
+    }
+
     applyAngularAttrs(el) {
       const attrs = this.getAngularAttrs();
       el.querySelectorAll('*').forEach((child) => {
@@ -730,7 +744,7 @@
           <div style="font-size: 15px; font-weight: 600;">Manage Conversation</div>
           <button id="g-chat-modal-close" style="background: transparent; border: none; color: inherit; cursor: pointer; opacity: 0.6; display: flex; align-items: center; padding: 4px;">${Icons.DELETE}</button>
         </div>
-        
+
         <div style="font-size: 12px; opacity: 0.65; line-height: 1.4;">
           This conversation is not actively rendered in Gemini's current sidebar view. You can open it, adjust its local layout settings, or remove it.
         </div>
@@ -831,18 +845,27 @@
       const modal = document.createElement('div');
       modal.style.cssText = `
         background: #1e1f20; color: #e3e3e3; border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 16px; width: 460px; max-width: 100%; max-height: 90vh;
+        border-radius: 16px; width: 480px; max-width: 100%; max-height: 90vh;
         display: flex; flex-direction: column; gap: 12px; padding: 20px;
         box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); box-sizing: border-box;
       `;
+
+      const treePreview = this.getFolderTreeText();
 
       modal.innerHTML = `
         <div style="display: flex; align-items: center; justify-content: space-between;">
           <div style="font-size: 15px; font-weight: 600;">Import Configuration (Paste)</div>
           <button id="g-modal-close" style="background: transparent; border: none; color: inherit; cursor: pointer; opacity: 0.6; display: flex; align-items: center; padding: 4px;">${Icons.DELETE}</button>
         </div>
-        <div style="font-size: 12px; opacity: 0.7;">Paste your exported JSON data directly below or read it from the clipboard:</div>
-        <textarea id="g-modal-textarea" placeholder='{"schemaVersion": 1, "folders": [...], ...}' style="width: 100%; height: 160px; box-sizing: border-box; background: #131314; color: #e3e3e3; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; padding: 10px; font-family: monospace; font-size: 11px; resize: vertical; outline: none;"></textarea>
+
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <div style="font-size: 11px; font-weight: 500; opacity: 0.75;">Current Folder Structure:</div>
+          <pre style="margin: 0; padding: 8px 10px; background: #131314; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; font-family: monospace; font-size: 11px; color: #c4c7c5; max-height: 100px; overflow-y: auto; white-space: pre-wrap;">${treePreview}</pre>
+        </div>
+
+        <div style="font-size: 12px; opacity: 0.7;">Paste your exported JSON data directly below or read it from clipboard:</div>
+        <textarea id="g-modal-textarea" placeholder='{"schemaVersion": 1, "folders": [...], ...}' style="width: 100%; height: 130px; box-sizing: border-box; background: #131314; color: #e3e3e3; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; padding: 10px; font-family: monospace; font-size: 11px; resize: vertical; outline: none;"></textarea>
+
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px;">
           <button id="g-modal-paste-clip" style="background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 16px; padding: 6px 12px; color: inherit; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
             ${Icons.PASTE}<span>Read Clipboard</span>
@@ -907,6 +930,15 @@
 
       textarea.focus();
 
+      const currentState = {
+        schemaVersion: SchemaMigrator.CURRENT_SCHEMA_VERSION,
+        folders: this.store.state.folders,
+        assignments: this.store.state.assignments,
+        chats: this.store.state.chats
+      };
+      textarea.value = JSON.stringify(currentState, null, 2);
+
+      // Only overwrite if clipboard holds valid JSON
       if (navigator.clipboard && navigator.clipboard.readText) {
         navigator.clipboard.readText().then((clipText) => {
           if (clipText && clipText.trim().startsWith('{')) {
@@ -1038,8 +1070,8 @@
       const safeTitle = Utils.escapeHtml(chat.title);
 
       item.innerHTML = `
-        <a mat-list-item="" theme="lm" draggable="true" 
-           class="mat-mdc-list-item mdc-list-item mat-mdc-tooltip-trigger gem-nav-list-item gmat-override mat-mdc-list-item-interactive mdc-list-item--with-leading-icon mdc-list-item--with-trailing-meta mat-mdc-list-item-both-leading-and-trailing lm-enabled mat-mdc-list-item-single-line mdc-list-item--with-one-line ng-star-inserted ${isActive ? 'is-active mdc-list-item--activated' : ''}" 
+        <a mat-list-item="" theme="lm" draggable="true"
+           class="mat-mdc-list-item mdc-list-item mat-mdc-tooltip-trigger gem-nav-list-item gmat-override mat-mdc-list-item-interactive mdc-list-item--with-leading-icon mdc-list-item--with-trailing-meta mat-mdc-list-item-both-leading-and-trailing lm-enabled mat-mdc-list-item-single-line mdc-list-item--with-one-line ng-star-inserted ${isActive ? 'is-active mdc-list-item--activated' : ''}"
            href="/app/${chat.id}" aria-label="${safeTitle}" tabindex="0">
           <span class="mdc-list-item__content">
             <span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text">
@@ -1114,9 +1146,9 @@
       upBtn.disabled = !this.store.state.currentFolderId;
       upBtn.style.cssText = `
         display: inline-flex; align-items: center; justify-content: center;
-        border: 1px solid rgba(128,128,128,0.25); background: rgba(128,128,128,0.08); 
+        border: 1px solid rgba(128,128,128,0.25); background: rgba(128,128,128,0.08);
         color: inherit; border-radius: 8px; width: 28px; height: 28px;
-        cursor: ${this.store.state.currentFolderId ? 'pointer' : 'default'}; 
+        cursor: ${this.store.state.currentFolderId ? 'pointer' : 'default'};
         opacity: ${this.store.state.currentFolderId ? '1' : '0.3'}; flex-shrink: 0;
       `;
 

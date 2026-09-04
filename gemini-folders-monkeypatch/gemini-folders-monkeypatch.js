@@ -1041,7 +1041,6 @@
         <a mat-list-item="" theme="lm" draggable="true" 
            class="mat-mdc-list-item mdc-list-item mat-mdc-tooltip-trigger gem-nav-list-item gmat-override mat-mdc-list-item-interactive mdc-list-item--with-leading-icon mdc-list-item--with-trailing-meta mat-mdc-list-item-both-leading-and-trailing lm-enabled mat-mdc-list-item-single-line mdc-list-item--with-one-line ng-star-inserted ${isActive ? 'is-active mdc-list-item--activated' : ''}" 
            href="/app/${chat.id}" aria-label="${safeTitle}" tabindex="0">
-          <div matlistitemicon="" class="mat-mdc-list-item-icon leading-icon-container removed mdc-list-item__start"></div>
           <span class="mdc-list-item__content">
             <span class="mat-mdc-list-item-unscoped-content mdc-list-item__primary-text">
               <span class="label-and-badge menu-entry-with-badge ng-star-inserted">

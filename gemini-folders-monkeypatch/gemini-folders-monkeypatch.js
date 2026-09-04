@@ -937,15 +937,6 @@
         chats: this.store.state.chats
       };
       textarea.value = JSON.stringify(currentState, null, 2);
-
-      // Only overwrite if clipboard holds valid JSON
-      if (navigator.clipboard && navigator.clipboard.readText) {
-        navigator.clipboard.readText().then((clipText) => {
-          if (clipText && clipText.trim().startsWith('{')) {
-            textarea.value = clipText;
-          }
-        }).catch(() => {});
-      }
     }
 
     createParentDirectoryRow(parentFolder) {

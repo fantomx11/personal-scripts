@@ -2,6 +2,10 @@
  * YouTube Live Chat Scraper (Main Page -> Chat Frame Bridge)
  * Runs from the main YouTube page, accesses iframe#chatframe, and renders a floating HUD.
  */
+
+/* Bookmarklet:
+javascript:(function() {const repoUrl = 'https://fantomx11.github.io/personal-scripts/scrape-youtube-chat.js';fetch(repoUrl, {headers: {'Authorization': `token ${token}`,'Accept': 'application/vnd.github.v3.raw'}}).then(r => {if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);return r.text();}).then(code => {const script = document.createElement('script');if (window.trustedTypes && window.trustedTypes.createPolicy) {const policy = window.trustedTypes.defaultPolicy || (window.__ytScriptPolicy ??= window.trustedTypes.createPolicy('yt-script-policy', {createScript: (s) => s}));script.text = policy.createScript(code);} else {script.textContent = code;}(document.head || document.documentElement).appendChild(script);script.remove();}).catch(err => console.error('Failed to load script:', err));})();
+*/
 (function () {
   // #region --- STATE & SETUP ---
 
